@@ -1,0 +1,76 @@
+{
+  "mode_id": 3,
+  "mode_name": "MODE_50W",
+  "trt_version": "10.4.0",
+  "torch_version": "2.8.0",
+  "backbone_engine": "backbone_int8_orin.engine",
+  "head_engine": "head_int8_orin.engine",
+  "reps": 10,
+  "warmup": 3,
+  "workload": "backbone: fixed random input; head: frame_000 of head_calib.npz",
+  "backbone": {
+    "p50": 50.3,
+    "p90": 50.4,
+    "mean": 50.3,
+    "runs": [
+      50.3,
+      50.4,
+      50.4,
+      50.3,
+      50.3,
+      50.3,
+      50.3,
+      50.3,
+      50.3,
+      50.3
+    ]
+  },
+  "head": {
+    "p50": 410.5,
+    "p90": 410.6,
+    "mean": 410.5,
+    "runs": [
+      410.4,
+      410.6,
+      410.6,
+      410.6,
+      410.4,
+      410.5,
+      410.4,
+      410.5,
+      410.6,
+      410.6
+    ]
+  },
+  "e2e": {
+    "p50": 460.8,
+    "p90": 461.0
+  },
+  "tegrastats": {
+    "gpu_clock_mhz": {
+      "mean": 747.8,
+      "p95": 815.0,
+      "min": 305.0,
+      "max": 815.0
+    },
+    "emc_clock_mhz": {
+      "mean": 3199.0,
+      "p95": 3199.0,
+      "min": 3199.0,
+      "max": 3199.0
+    },
+    "power_vin_w": {
+      "mean": 8.0,
+      "p95": 8.9,
+      "min": 4.4,
+      "max": 8.9
+    },
+    "power_gpu_soc_rail_w": {
+      "mean": 15.4,
+      "p95": 18.3,
+      "min": 4.0,
+      "max": 18.3
+    }
+  },
+  "timestamp": "2026-08-12 22:01:17"
+}

@@ -1,0 +1,24 @@
+NOTICE
+======
+
+This project is licensed under the Apache License, Version 2.0 (see `LICENSE`).
+This project includes and derives from the third-party components listed below.
+Each component remains under its own license; the table maps components to their
+upstream sources and to where they appear in this repository.
+
+| Component | Upstream | Upstream license | Where in this repo |
+|---|---|---|---|
+| MSDeformAttn TensorRT plugin | NVIDIA (with modifications for VAD/opt8 vectorization) | Apache-2.0 (SPDX headers: "Copyright (c) 1993-2025 NVIDIA CORPORATION & AFFILIATES") | `plugins/src/ms_deform_attn/` |
+| rotate / select-and-pad TensorRT plugins | NVIDIA (with modifications) | Apache-2.0 (SPDX headers) | `plugins/src/rotate/`, `plugins/src/select_and_pad/` |
+| ONNX export hook/patch framework (`bev_deploy`) | NVIDIA DL4AGX (with modifications for VAD) | Apache-2.0 (SPDX headers: "Copyright (c) 2023-2025 NVIDIA CORPORATION & AFFILIATES") | `onnx_export/patches/bev_deploy/` |
+| Head/rotate export patches | NVIDIA (with modifications) | Apache-2.0 (SPDX headers) | `onnx_export/patches/patch/` |
+| VAD model architecture and training code | hustvl/VAD | Apache-2.0 | model definitions used via the external training repo |
+| Bench2Drive benchmark / dataset tooling | Thinklab-SJTU/Bench2Drive | see upstream repository | data format, eval scene definitions, mini-set subset |
+| mmcv / mmdet / mmdet3d (OpenMMLab) | open-mmlab | Apache-2.0 | model/config runtime dependencies (external training repo) |
+| PyTorch | pytorch | BSD-3-Clause | export/quantization tooling |
+| ONNX / onnx-graphsurgeon / onnx-simplifier | onnx / NVIDIA / onnx communities | MIT / MIT / MIT | ONNX tooling |
+| TensorRT, CUDA, JetPack runtimes | NVIDIA | Apache-2.0 (TensorRT open-source components); JetPack/CUDA runtime components under the NVIDIA software license terms shipped with them | build/deploy dependencies — users must comply with the applicable NVIDIA license terms |
+
+Bench2Drive dataset files are subject to the dataset's own terms — see
+<https://github.com/Thinklab-SJTU/Bench2Drive> before redistribution. The mini-set
+subset in `data/bench2drive/` is not committed to this repository.

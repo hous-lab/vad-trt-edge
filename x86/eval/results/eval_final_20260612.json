@@ -1,0 +1,26 @@
+{
+  "pytorch_full": {
+    "prefix": "PyTorch-Full",
+    "latency_ms": 233.29093247770487,
+    "fps": 4.286493218486183,
+    "num_samples": 173,
+    "num_valid": 133,
+    "planning": {
+      "plan_L2_1s": 0.7300417289332503,
+      "plan_L2_2s": 1.642594835895307,
+      "plan_L2_3s": 2.6966533832845174
+    }
+  },
+  "trt_hybrid": {
+    "prefix": "TRT-Hybrid",
+    "latency_ms": 98.4590184676994,
+    "fps": 10.15650994254083,
+    "num_samples": 173,
+    "num_valid": 133,
+    "planning": {
+      "plan_L2_1s": 1.1700319248393287,
+      "plan_L2_2s": 1.9201707573068962,
+      "plan_L2_3s": 2.6127933033090187
+    }
+  }
+}

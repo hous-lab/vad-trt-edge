@@ -1,0 +1,65 @@
+{
+  "config": {
+    "num_samples": 10,
+    "warmup": 3,
+    "detail": true,
+    "profile_trt": false
+  },
+  "architecture": {
+    "bev_h": 200,
+    "bev_w": 200,
+    "bev_queries": 40000,
+    "encoder_layers": 6,
+    "det_decoder_layers": 6,
+    "map_decoder_layers": 6,
+    "fpn_levels": 4,
+    "temporal_queue": 4
+  },
+  "pytorch_profiling": {
+    "avg_e2e_ms": 229.40189630025998,
+    "first_frame_ms": 222.21134100254858,
+    "module_breakdown_ms": {
+      "head_total": 132.05572280883788,
+      "encoder_total": 101.56928253173828,
+      "1_backbone": 94.71429214477538,
+      "map_decoder_total": 14.005516910552979,
+      "2b_encoder_L5_spatial_cross_attn": 11.301168060302734,
+      "2b_encoder_L4_spatial_cross_attn": 11.229183959960938,
+      "2b_encoder_L3_spatial_cross_attn": 11.156991958618164,
+      "2b_encoder_L2_spatial_cross_attn": 10.901097393035888,
+      "2b_encoder_L1_spatial_cross_attn": 10.414492797851562,
+      "2b_encoder_L0_spatial_cross_attn": 9.991737651824952,
+      "det_decoder_total": 4.402662348747254,
+      "2b_encoder_L3_temporal_self_attn": 3.8016671895980836,
+      "2b_encoder_L4_temporal_self_attn": 3.796940803527832,
+      "2b_encoder_L5_temporal_self_attn": 3.7540863752365112,
+      "2b_encoder_L2_temporal_self_attn": 3.7200255393981934,
+      "2b_encoder_L0_temporal_self_attn": 3.454291248321533,
+      "2b_encoder_L1_temporal_self_attn": 3.4295264005661013,
+      "4_map_decoder_L1": 2.2441856145858763,
+      "4_map_decoder_L5": 2.2427680492401123,
+      "4_map_decoder_L4": 2.2314112186431885,
+      "4_map_decoder_L3": 2.230608010292053,
+      "4_map_decoder_L2": 2.2250624179840086,
+      "4_map_decoder_L0": 2.214448022842407,
+      "7_motion_map_decoder": 1.5732607960700988,
+      "6_motion_decoder": 1.467033588886261,
+      "3_det_decoder_L0": 0.8042112052440643,
+      "3_det_decoder_L1": 0.6531775951385498,
+      "3_det_decoder_L5": 0.6246655941009521,
+      "3_det_decoder_L3": 0.6163904011249542,
+      "3_det_decoder_L2": 0.6160768032073974,
+      "3_det_decoder_L4": 0.6093216001987457,
+      "8_ego_agent_decoder": 0.2909632012248039,
+      "9_ego_map_decoder": 0.287043197453022
+    }
+  },
+  "orin_estimation": {
+    "fp16_head_ms": 7799,
+    "int8_opt0_ms": 2630,
+    "int8_opt2_ms": 1754,
+    "target_ms": 100,
+    "gap_x": 17.5,
+    "vad_tiny_estimated_ms": "110-220"
+  }
+}

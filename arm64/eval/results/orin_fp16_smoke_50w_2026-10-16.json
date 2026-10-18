@@ -1,0 +1,48 @@
+{
+  "trt_version": "10.4.0",
+  "frames": [
+    {
+      "frame": "frame_000",
+      "latency_ms": 472.15072001563385
+    },
+    {
+      "frame": "frame_001",
+      "latency_ms": 434.8026560037397
+    },
+    {
+      "frame": "frame_002",
+      "latency_ms": 405.0447680056095
+    },
+    {
+      "frame": "frame_003",
+      "latency_ms": 407.91087999241427
+    },
+    {
+      "frame": "frame_004",
+      "latency_ms": 411.59164800774306
+    },
+    {
+      "frame": "frame_005",
+      "latency_ms": 411.5137279732153
+    },
+    {
+      "frame": "frame_006",
+      "latency_ms": 407.7923520235345
+    },
+    {
+      "frame": "frame_007",
+      "latency_ms": 411.29494400229305
+    },
+    {
+      "frame": "frame_008",
+      "latency_ms": 405.55145603138953
+    },
+    {
+      "frame": "frame_009",
+      "latency_ms": 414.305376005359
+    }
+  ],
+  "avg_latency_ms": 418.19585280609317,
+  "avg_cos_sim": {},
+  "fps": 2.3912240958153994
+}

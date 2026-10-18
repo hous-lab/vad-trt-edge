@@ -1,0 +1,33 @@
+# --- Python ---
+__pycache__/
+*.pyc
+.omc/
+.claude/
+
+# --- Build artifacts ---
+**/build/
+*.so
+
+# --- Regenerable model artifacts (engines/ONNX/weights/calib tensors) ---
+*.engine
+*.onnx
+*.pth
+*.npz
+
+# --- Engine build outputs ---
+x86/trt_compile/output/
+arm64/trt_compile/output/
+
+# --- Export demo inputs ---
+onnx_export/demo_data/
+
+# --- Datasets (download or regenerate; see data/README.md) ---
+data/bench2drive/
+
+# --- Local logs / scratch ---
+*.log
+tegrastats_*.log
+
+# --- Raw benchmark evidence (kept local, JSONs are committed) ---
+arm64/eval/results/power_modes/*.tegrastats.log.gz
+arm64/eval/results/power_modes/*.tegrastats.log

@@ -1,0 +1,20 @@
+{
+  "description": "Platform peak anchors measured on the deployment Orin (AGX Orin 64GB, MAXN) via arm64/eval/microbench_orin.py \u2014 the achievable (not datasheet) roofline endpoints used by docs/roofline_analysis.md.",
+  "meta": {
+    "date": "2026-10-20",
+    "device": "Jetson AGX Orin 64GB (sm_87)",
+    "pytorch": "2.8.0",
+    "power_mode": "MAXN"
+  },
+  "results": {
+    "dram_copy_bandwidth_gbps": 170,
+    "dram_copy_note": "2 x 1 GiB fp16 copy, best of 10 reps; 83% of the 204.8 GB/s datasheet figure",
+    "fp16_gemm_8192_tflops": 21.7,
+    "fp16_gemm_note": "8192^3, best of 10; ~51% of the ~42.5 dense TFLOPS derived from the datasheet (sparse/2)",
+    "int8_gemm_8192_tops": 10.5,
+    "int8_gemm_note": "torch._int_mm 8192^3, best of 10; measures SLOWER than FP16 in this path (a torch/cuBLASLt kernel-selection artifact on sm_87, not the platform INT8 ceiling: TRT IMMA convs reach 1.78x on the backbone, roofline 3.1)",
+    "tiny_kernel_floor_us": 28.2,
+    "tiny_kernel_note": "1000 back-to-back 1k-element fp16 adds, per-kernel launch+execute floor; x481 kernels per head inference = ~13.5 ms fixed cost"
+  },
+  "usage": "Anchor values for docs/roofline_analysis.md sections 2 and 3.2; regenerate with: LD_LIBRARY_PATH=<TRT lib> python3 arm64/eval/microbench_orin.py"
+}

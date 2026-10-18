@@ -1,0 +1,35 @@
+{
+  "description": "Full-inference kernel census of an Orin-built INT8-quantized VAD-Base head engine (real-data PTQ calibration; MatMul/Softmax kept FP16 by design) on AGX Orin. One profiled inference (torch.cuda.profiler start/stop around a single trt_run), captured with Nsight Compute 2024.3.1 (--set basic, --profile-from-start off, --clock-control none). Finding: ZERO INT8/IMMA kernels execute; INT8 never touches the dominant kernels.",
+  "meta": {
+    "date": "2026-10-20",
+    "device": "Jetson AGX Orin 64GB (sm_87)",
+    "power_mode": "MAXN",
+    "engine": "Orin-built INT8-quantized VAD-Base head engine (real-data PTQ calibration; MatMul/Softmax kept FP16)",
+    "plugin": "arm64/plugins_build/build/libplugins_orin.so",
+    "profiler": "ncu 2024.3.1, --set basic, --profile-from-start off, --clock-control none",
+    "captured_kernels": 481,
+    "captured_kernel_time_ms": 566.7,
+    "honesty_note": "ncu serializes kernels and flushes caches per replay, so absolute per-kernel times are inflated ~2x vs the 291.5 ms CUDA-event wall time at MAXN. Category SHARES are the meaningful output; do not cite the absolute ms."
+  },
+  "category_shares": [
+    {"category": "plugin_deform (FP16)", "ms": 220.6, "share_pct": 38.9, "n": 19, "sm_pct_median": 64.3, "mem_pct_median": 64.7},
+    {"category": "elementwise_fused (FP16)", "ms": 215.5, "share_pct": 38.0, "n": 307, "sm_pct_median": 17.0, "mem_pct_median": 56.8},
+    {"category": "gemm_matmul (FP16)", "ms": 120.9, "share_pct": 21.3, "n": 147, "sm_pct_median": 42.7, "mem_pct_median": 50.4},
+    {"category": "softmax", "ms": 6.5, "share_pct": 1.1, "n": 1, "sm_pct_median": 23.5, "mem_pct_median": 38.0},
+    {"category": "other", "ms": 3.3, "share_pct": 0.6, "n": 6, "sm_pct_median": 74.5, "mem_pct_median": 59.6},
+    {"category": "conv (INT8-eligible)", "ms": 0.0, "share_pct": 0.0, "n": 0}
+  ],
+  "top_kernels": [
+    {"name": "ms_deformable_im2col_gpu_kernel_opt8", "ms": 219.5, "n": 13, "note": "MSDeformAttn plugin, __half vectorized; SM 64%/Mem 65% = latency/occupancy-bound (gather-heavy), neither pipe saturated"},
+    {"name": "trt_ampere_h16816gemm_128x128_ldg8_relu_stages_32x5_tn_v1", "ms": 54.8, "n": 17, "note": "FP16 tensor-op GEMM"},
+    {"name": "__myl_CasMulCasSum / ResMulResAdd / ResCasMaxSubExpSumDiv / Cas / ... (TRT fused elementwise)", "ms": "~150", "n": "~290", "note": "attention/FFN plumbing fused by TRT; SM 17%/Mem 57%"},
+    {"name": "sm50_xmma_cublas_gemvx_f16f16 (GEMV-class, small-M)", "ms": 25.0, "n": 15, "note": "query-wise GEMMs (300 x 256): small-M, weight-streaming"},
+    {"name": "sm80_xmma_gemm_f16f16_* family", "ms": "~55", "n": "~100", "note": "FP16 xmma GEMMs"},
+    {"name": "_gemm_mha_v2 (TRT fused MHA GEMM)", "n": 5},
+    {"name": "genericReformat copies", "ms": 11.0, "n": 14}
+  ],
+  "int8_kernel_count": 0,
+  "int8_suspect_name_grep": ["int8", "imma", "qconv", "qgemm", "s8", "i8"],
+  "conclusion": "The INT8-quantized head engine runs 100% FP16 kernels. INT8-eligible ops (conv) are ~0% of head time; MatMuls are deliberately FP16; the deform plugin has no INT8 implementation. INT8's 2x arithmetic advantage therefore has no dominant kernel to accelerate.",
+  "companion": "orin_microbench_maxn.json (platform peak anchors), docs/roofline_analysis.md section 3.2 (analysis)"
+}
