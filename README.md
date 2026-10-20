@@ -77,6 +77,34 @@ Notes on the Orin table:
 - Quantization bought ~1.0x on the VAD-Base head (FP16-pinned kernel mix), while the structural reduction (VAD-Small) bought ~19x on the same head. This is the central finding; see [docs/roofline_analysis.md](docs/roofline_analysis.md) §3.
 - VAD-Small latency is **structure-determined**, not weight-determined: a fully trained VAD-Small deploys through this chain unchanged and hits the same ~61 ms-class Orin E2E. See [docs/model_variants.md](docs/model_variants.md) §5.
 
+### VAD-Base INT8 vs VAD-Small INT8 — the two deployment configs side by side (Orin MAXN)
+
+Both INT8 pairs ship in this repo and share the identical I/O contract (9 output tensors, same plugin set, hidden dim 256) — a VAD-Small engine is a drop-in replacement for a VAD-Base engine. On-device latency at MAXN vs the model differences that cause it:
+
+**Latency — Orin AGX 64 GB, MAXN, INT8 engines, p50:**
+
+| | VAD-Base INT8 (PTQ) | VAD-Small INT8 | Ratio |
+|---|---|---|---|
+| Backbone | 35.6 ms | 25.3 ms | 1.4x |
+| Head | 291.1 ms | 38.4 ms | **7.6x** |
+| **End-to-end** | **326.7 ms** | **63.7 ms** | **5.1x** |
+| Engine footprint | 107.2 MB (28.0 + 79.2) | 66.0 MB (25.8 + 40.2) | 1.6x |
+
+**Model differences (checkpoint-derived; full table: [docs/model_variants.md](docs/model_variants.md) §2):**
+
+| | VAD-Base | VAD-Small |
+|---|---|---|
+| BEV resolution (BEV queries) | 200×200 = 40,000 | 100×100 = 10,000 (**4x** fewer) |
+| BEV encoder / detection decoder / map decoder layers | 6 / 6 / 6 | 3 / 3 / 3 (2x shallower) |
+| FPN sampling levels | 4 | 1 (backbone C5 only) |
+| Temporal queue length | 4 | 3 |
+| Agent / map queries | 300 / 100 | 300 / 100 (unchanged) |
+| Total parameters | 58.38 M | 39.89 M (1.46x fewer) |
+| — pts_bbox_head | 31.59 M | 15.26 M (2.1x) |
+| — img_backbone (ResNet50) | 23.51 M | 23.51 M (unchanged) |
+
+Read-out: the 5.1x end-to-end gap is almost entirely a **head gap (7.6x)** — driven by the 4x BEV-query reduction plus 2x shallower encoder/decoders — while the backbone (same ResNet50) barely moves (1.4x). Quantization is accuracy-aligned on both configs (Base: x86 L2(1s) gate 0.7805 + on-device cos_sim ≥ 0.9986; Small: output-level cos_sim 0.99998), but the Small checkpoint is a 2-epoch efficiency-validation run, not a competitive closed-loop model ([docs/model_variants.md](docs/model_variants.md) §4). The Base PTQ pair is this repo's own scalar-plugin OptLevel-3 build — faster than the parent-era OptLevel-2 build quoted in the matched-era table below, same accuracy-clean plugin choice. **Latency at 50 W / 30 W / 15 W, with clocks and rail power per mode: [docs/power_modes.md](docs/power_modes.md) §4.3 (Base) and §4.2 (Small).**
+
 ### Lessons worth reading the docs for
 
 - **Calibration quality is make-or-break**: real-frame calibration gave L2 0.7805; a random-tensor calibration produced 4.359 (broken trajectories) at a *better* latency — accuracy gates are mandatory, latency is meaningless without them.
@@ -152,7 +180,7 @@ vad-trt-edge/
     +-- pipeline_guide.md        full repro manual (per-stage commands + expected outputs/gates)
     +-- roofline_analysis.md     Orin roofline + BEV-query bottleneck evidence
     +-- model_variants.md        Base vs Small structure/params, nuScenes reference, estimates
-    +-- power_modes.md           All 4 power modes x 2 engine configs measured (VAD-Small deployment config + VAD-Base FP16 verification pair)
+    +-- power_modes.md           Power-mode latency for 3 engine configs (Small INT8 + Base FP16 across all 4 modes; Base INT8 at MAXN + 50 W)
     +-- environment.md           both machines env + TRT version matrix + zoo-repo setup
 ```
 
@@ -191,7 +219,7 @@ Per-stage detail (full manual: docs/pipeline_guide.md):
 | [docs/pipeline_guide.md](docs/pipeline_guide.md) | Full x86 repro manual: per-stage commands, expected outputs, accuracy gates, troubleshooting (plugin linkage, prev_bev static, TRT pairing) |
 | [docs/roofline_analysis.md](docs/roofline_analysis.md) | Orin roofline inputs, module profiling, FP16-pinned head evidence (kernel census + microbench anchors), NaN-bug boundary, precision ladder provenance |
 | [docs/model_variants.md](docs/model_variants.md) | Base vs Small structure/params, "fast" honesty note, nuScenes VAD-Base vs VAD-Tiny reference, where Small sits vs Base |
-| [docs/power_modes.md](docs/power_modes.md) | All 4 nvpmodel modes x 2 engine configs measured (VAD-Small deployment config + VAD-Base FP16 verification pair; latency p50/p90, clocks, rail power) and the measurement harness |
+| [docs/power_modes.md](docs/power_modes.md) | Latency, clocks and rail power per nvpmodel mode for 3 engine configs (VAD-Small INT8 + VAD-Base FP16 across all 4 modes; VAD-Base INT8 (PTQ) at MAXN + 50 W) and the measurement harness |
 | [docs/environment.md](docs/environment.md) | Both machines' software matrix, the two-TensorRT reality, TRT version matrix, external training repo setup |
 | [data/README.md](data/README.md) | Bench2Drive mini-set: what it is, download, placement |
 | [ckpts/README.md](ckpts/README.md) | Checkpoint provenance and placement (weights are not committed) |
