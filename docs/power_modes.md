@@ -2,7 +2,7 @@
 
 NVIDIA Jetson AGX Orin exposes several `nvpmodel` power modes. For embedded deployment work the distinction matters: a fixed power budget does **not** mean a fixed latency, and the mode you measure under determines whether your latency numbers are reproducible. This document records what was measured on the development Orin across all four `nvpmodel` modes for three engine configurations, plus a reproducible measurement methodology.
 
-> Measured on an AGX Orin 64 GB module (TensorRT 10.4.0, torch 2.8.0, 2026-10). Three engine configurations, all in `arm64/eval/results/power_modes/` (per-mode JSONs with per-run latencies + tegrastats logs). Two quantized deployment configurations:
+> Measured on an AGX Orin 64 GB module (TensorRT 10.4.0, torch 2.8.0, 2026-10). **Latency convention: headline Orin latency numbers elsewhere in this repo are MAXN p50 — this document is the per-mode reference (50/30/15 W included).** Three engine configurations, all in `arm64/eval/results/power_modes/` (per-mode JSONs with per-run latencies + tegrastats logs). Two quantized deployment configurations:
 > - **VAD-Small INT8** (§4.2) — the final deployment configuration, the model carrying the **<100 ms Orin target**.
 > - **VAD-Base INT8 (PTQ)** (§4.3) — the final VAD-Base quantized deployment configuration: accuracy-aligned with the FP16 pair, backbone latency/footprint halved, E2E −3%.
 >

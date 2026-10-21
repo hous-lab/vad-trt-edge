@@ -44,6 +44,8 @@ Two consequences for this workload:
 
 ## 3. What the measurements say
 
+> **Power-mode convention:** the module tables in §3.1–§3.4 are the parent-project measurements taken in **50 W mode** (that data only exists at 50 W); **this repo's latency convention is MAXN** — current headline numbers per mode: [power_modes.md](power_modes.md) §4.1–§4.3. The relative conclusions (INT8 pays on the backbone, ~1.0x on the head, structure ≫ precision) are power-mode-independent.
+
 ### 3.1 Backbone: compute-bound, INT8 pays
 
 | Engine (Orin, 50 W mode) | Latency | INT8 vs FP16 |
@@ -97,11 +99,11 @@ The same chain applied to VAD-Small (4× fewer BEV queries, 2× fewer layers, 4�
 
 > Re-benchmark note (2026-10-20): fresh re-measurement of the same small engines: **63.7 ms (MAXN) / 87.4 ms (50 W)** — [power_modes.md](power_modes.md) §4.2.
 
-Cutting activation volume (4× queries × 2× layers = 8× activation traffic; up to 32× arithmetic reduction in SCA) delivered ~19× on the head where precision tuning delivered ~1.0×. Smaller model structure is also the only lever that improved both latency *and* the deployment envelope at once.
+Cutting activation volume (4× queries × 2× layers = 8× activation traffic; up to 32× arithmetic reduction in SCA) delivered ~19× on the head at 50 W (7.6× at MAXN) where precision tuning delivered ~1.0×. Smaller model structure is also the only lever that improved both latency *and* the deployment envelope at once.
 
 ### 3.5 The NaN bug boundary (plugin optimization)
 
-The vectorized `opt8` MSDeformAttn plugin (4×`__half2` per thread) carries a **non-deterministic NaN bug at VAD-Base size on Orin** (~55% of runs; the parent project's `vadbase_opt5_cross_cos_sim_v2` measurement records `cos_sim_avg: NaN`). VAD-Small (single FPN level) is unaffected — 50 consecutive stress runs clean. Practical consequence: the fast 302.2 ms VAD-Base head build is latency-valid but **not production-usable**; VAD-Base production INT8 remains the 726.7 ms-class scalar-plugin build, while VAD-Small ships the vectorized plugin safely.
+The vectorized `opt8` MSDeformAttn plugin (4×`__half2` per thread) carries a **non-deterministic NaN bug at VAD-Base size on Orin** (~55% of runs; the parent project's `vadbase_opt5_cross_cos_sim_v2` measurement records `cos_sim_avg: NaN`). VAD-Small (single FPN level) is unaffected — 50 consecutive stress runs clean. Practical consequence: the fast 302.2 ms VAD-Base head build is latency-valid but **not production-usable**; VAD-Base production INT8 is now this repo's scalar-plugin OptLevel-3 PTQ build (**E2E 326.7 ms at MAXN**, [power_modes.md](power_modes.md) §4.3), while VAD-Small ships the vectorized plugin safely.
 
 ## 4. Precision ladder (x86, VAD-Base, 173-frame eval)
 
@@ -135,7 +137,7 @@ The headline: **structure beats precision**. All precision work combined moved E
 ## 6. Remaining headroom
 
 - **Head MatMul subgraph** is still FP16 by design (§3.3). Pushing it to INT8 requires quantization-aware training on the MatMul inputs — out of scope for this release. The census bounds the upside: even a perfect MatMul→INT8 conversion touches only the 21% GEMM share; the 77% plugin+elementwise majority stays FP16-pinned until the plugin gains an INT8 implementation.
-- **Fully trained VAD-Small** inherits the identical ~61.3 ms deployment cost (structure-determined) while closing the accuracy gap that the 2-epoch fast-run checkpoint leaves open.
+- **Fully trained VAD-Small** inherits the identical structure-determined deployment cost (~64 ms-class at MAXN) while closing the accuracy gap that the 2-epoch fast-run checkpoint leaves open.
 - **DLA** (2× NVDLA v2.0 on AGX Orin) is unused by this pipeline; conv-only subgraphs (backbone) are the natural candidates.
 - **Power modes** matter mostly pre-optimization: after the OptLevel=3 pass the head is no longer compute-starved, so 50 W vs MAXN E2E differ by <1% (see `docs/power_modes.md` §3).
 

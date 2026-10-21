@@ -59,36 +59,30 @@ All numbers in this README and in `docs/` were measured on exactly these two dev
 
 L2(1s) = mean planning L2 distance at 1 s horizon vs ground-truth future ego trajectory, in meters — same metric family as the official VAD planning table. Repro gates for this repo's chain: **FP16 0.727, INT8 0.7805 (each ± 0.01)**. Reference engines rerun deterministically; fresh engine rebuilds vary within ±0.02 (measured, see docs/pipeline_guide.md §5).
 
-### Orin (AGX Orin 64 GB, 50 W mode, INT8 engines)
+### Orin (AGX Orin 64 GB, INT8 deployment configs) — headline: MAXN p50
 
-| Module | VAD-Base | VAD-Small (2-epoch) | Speedup |
-|---|---|---|---|
-| Backbone INT8 | 47.9 ms | 25.6 ms | 1.87x |
-| Head INT8 | 678.8 ms | 35.8 ms | **19.0x** |
-| **End-to-end** | **726.7 ms** | **61.3 ms** | 11.9x |
-| Parameters | 58.38 M | 39.89 M | 1.46x |
-| Head cos_sim vs PyTorch | — | 0.99998 | quantization loss-free at output level |
+> **Latency convention:** Orin headline latency in this repo is always **MAXN** (`nvpmodel -m 0` — no clock/power cap, DVFS at the physical ceiling) p50. The power-budget modes are materially slower (VAD-Small INT8 E2E 63.7 → 87.4 → 196.1 → 384.7 ms for MAXN → 50 W → 30 W → 15 W). Per-mode tables with clocks and rail power: [docs/power_modes.md](docs/power_modes.md) §4.2 (Small) / §4.3 (Base).
 
-Notes on the Orin table:
-
-- **On-device FP16 verification:** the repo's FP16 pair (backbone + head) builds cleanly from a fresh checkout on the AGX Orin 64 GB unit and passes the 10-frame smoke — head-only 286.1 ms avg (3.49 FPS) at MAXN, 418.2 ms in 50 W mode (`arm64/eval/results/orin_fp16_smoke_{maxn,50w}_2026-10-16.json`; the smoke harness measures the head engine only). Full-pair latency (backbone + head) per power mode, with p50/p90 and clocks/power: see docs/power_modes.md §4.1. The VAD-Small INT8 deployment config is measured across all four modes as well (§4.2 there: the <100 ms target model — 63.7 ms at MAXN / 87.4 ms at 50 W, but 196 ms at 30 W).
-- **On-device VAD-Base INT8 (PTQ) verification (final Base quantized deployment config):** the repo's INT8 pair builds from the committed calibration caches — or recalibrates on-device when they are absent (both paths verified on this unit) — passes the 10-frame head-only fidelity eval vs the x86 FP16 reference at **cos_sim ≥ 0.9986 on all 9 outputs** (gate 0.99; `arm64/eval/results/orin_int8_ptq_lite.json`), and measures **E2E 326.7 ms at MAXN / 460.8 ms at 50 W** — INT8 halves the backbone's latency and footprint (35.6 ms / 28.0 MB vs FP16's 55.4 ms / 54.1 MB) while the head stays FP16-pinned and matches FP16 latency (291.1 ms) — per-mode table: [docs/power_modes.md](docs/power_modes.md) §4.3.
-- The VAD-Base head column is the accuracy-clean matched-era comparison. A faster VAD-Base head build exists (302.2 ms via the vectorized `opt8` plugin at OptLevel=5), but that combination carries a **non-deterministic NaN bug at VAD-Base size on Orin** (~55% of runs) and is not production-usable — see [docs/roofline_analysis.md](docs/roofline_analysis.md) §5.
-- Quantization bought ~1.0x on the VAD-Base head (FP16-pinned kernel mix), while the structural reduction (VAD-Small) bought ~19x on the same head. This is the central finding; see [docs/roofline_analysis.md](docs/roofline_analysis.md) §3.
-- VAD-Small latency is **structure-determined**, not weight-determined: a fully trained VAD-Small deploys through this chain unchanged and hits the same ~61 ms-class Orin E2E. See [docs/model_variants.md](docs/model_variants.md) §5.
-
-### VAD-Base INT8 vs VAD-Small INT8 — the two deployment configs side by side (Orin MAXN)
-
-Both INT8 pairs ship in this repo and share the identical I/O contract (9 output tensors, same plugin set, hidden dim 256) — a VAD-Small engine is a drop-in replacement for a VAD-Base engine. On-device latency at MAXN vs the model differences that cause it:
-
-**Latency — Orin AGX 64 GB, MAXN, INT8 engines, p50:**
-
-| | VAD-Base INT8 (PTQ) | VAD-Small INT8 | Ratio |
+| Module (MAXN p50, INT8 deployment configs) | VAD-Base INT8 (PTQ) | VAD-Small INT8 | Ratio |
 |---|---|---|---|
 | Backbone | 35.6 ms | 25.3 ms | 1.4x |
 | Head | 291.1 ms | 38.4 ms | **7.6x** |
 | **End-to-end** | **326.7 ms** | **63.7 ms** | **5.1x** |
 | Engine footprint | 107.2 MB (28.0 + 79.2) | 66.0 MB (25.8 + 40.2) | 1.6x |
+| Parameters | 58.38 M | 39.89 M | 1.46x |
+| Head quantization fidelity | cos_sim ≥ 0.9986 vs x86 FP16 (all 9 outputs) | cos_sim 0.99998 vs PyTorch | accuracy-aligned on both configs |
+
+Notes on the Orin table:
+
+- **On-device FP16 verification:** the repo's FP16 pair (backbone + head) builds cleanly from a fresh checkout on the AGX Orin 64 GB unit and passes the 10-frame smoke — head-only 286.1 ms avg (3.49 FPS) at MAXN (`arm64/eval/results/orin_fp16_smoke_maxn_2026-10-16.json`; the smoke harness measures the head engine only) — other power modes: docs/power_modes.md §4.1. The VAD-Small INT8 config is measured across all four modes there as well (§4.2: the <100 ms target holds at MAXN and 50 W, breaks at 30 W).
+- **On-device VAD-Base INT8 (PTQ) verification (final Base quantized deployment config):** the repo's INT8 pair builds from the committed calibration caches — or recalibrates on-device when they are absent (both paths verified on this unit) — passes the 10-frame head-only fidelity eval vs the x86 FP16 reference at **cos_sim ≥ 0.9986 on all 9 outputs** (gate 0.99; `arm64/eval/results/orin_int8_ptq_lite.json`), and measures **E2E 326.7 ms at MAXN** — INT8 halves the backbone's latency and footprint (35.6 ms / 28.0 MB vs FP16's 55.4 ms / 54.1 MB) while the head stays FP16-pinned and matches FP16 latency (291.1 ms) — other power modes: [docs/power_modes.md](docs/power_modes.md) §4.3.
+- The MAXN table above uses this repo's own accuracy-clean INT8 builds. A faster VAD-Base head build exists (302.2 ms, parent-era 50 W measurement, vectorized `opt8` plugin at OptLevel=5), but that combination carries a **non-deterministic NaN bug at VAD-Base size on Orin** (~55% of runs) and is not production-usable — see [docs/roofline_analysis.md](docs/roofline_analysis.md) §5.
+- Quantization bought ~1.0x on the VAD-Base head (FP16-pinned kernel mix), while the structural reduction (VAD-Small) bought **7.6x** on the same head (291.1 vs 38.4 ms at MAXN). This is the central finding; see [docs/roofline_analysis.md](docs/roofline_analysis.md) §3.
+- VAD-Small latency is **structure-determined**, not weight-determined: a fully trained VAD-Small deploys through this chain unchanged and hits the same ~64 ms-class Orin E2E at MAXN. See [docs/model_variants.md](docs/model_variants.md) §5.
+
+### VAD-Base INT8 vs VAD-Small INT8 — model differences behind the 5.1x MAXN gap
+
+Both INT8 pairs ship in this repo and share the identical I/O contract (9 output tensors, same plugin set, hidden dim 256) — a VAD-Small engine is a drop-in replacement for a VAD-Base engine. The latency side of the comparison is the MAXN table in the Orin key results above; the model differences that cause the gap:
 
 **Model differences (checkpoint-derived; full table: [docs/model_variants.md](docs/model_variants.md) §2):**
 
@@ -103,7 +97,7 @@ Both INT8 pairs ship in this repo and share the identical I/O contract (9 output
 | — pts_bbox_head | 31.59 M | 15.26 M (2.1x) |
 | — img_backbone (ResNet50) | 23.51 M | 23.51 M (unchanged) |
 
-Read-out: the 5.1x end-to-end gap is almost entirely a **head gap (7.6x)** — driven by the 4x BEV-query reduction plus 2x shallower encoder/decoders — while the backbone (same ResNet50) barely moves (1.4x). Quantization is accuracy-aligned on both configs (Base: x86 L2(1s) gate 0.7805 + on-device cos_sim ≥ 0.9986; Small: output-level cos_sim 0.99998), but the Small checkpoint is a 2-epoch efficiency-validation run, not a competitive closed-loop model ([docs/model_variants.md](docs/model_variants.md) §4). The Base PTQ pair is this repo's own scalar-plugin OptLevel-3 build — faster than the parent-era OptLevel-2 build quoted in the matched-era table below, same accuracy-clean plugin choice. **Latency at 50 W / 30 W / 15 W, with clocks and rail power per mode: [docs/power_modes.md](docs/power_modes.md) §4.3 (Base) and §4.2 (Small).**
+Read-out: the 5.1x end-to-end gap is almost entirely a **head gap (7.6x)** — driven by the 4x BEV-query reduction plus 2x shallower encoder/decoders — while the backbone (same ResNet50) barely moves (1.4x). Quantization is accuracy-aligned on both configs (Base: x86 L2(1s) gate 0.7805 + on-device cos_sim ≥ 0.9986; Small: output-level cos_sim 0.99998), but the Small checkpoint is a 2-epoch efficiency-validation run, not a competitive closed-loop model ([docs/model_variants.md](docs/model_variants.md) §4). The Base PTQ pair is this repo's own scalar-plugin OptLevel-3 build — faster than the parent-era OptLevel-2 build (docs/model_variants.md §3), same accuracy-clean plugin choice. **Latency at 50 W / 30 W / 15 W, with clocks and rail power per mode: [docs/power_modes.md](docs/power_modes.md) §4.3 (Base) and §4.2 (Small).**
 
 ### Lessons worth reading the docs for
 

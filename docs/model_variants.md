@@ -45,9 +45,9 @@ Key structural invariants: the head I/O contract (9 output tensors — detection
 
 ## 3. Measured deployment results
 
-All numbers below are INT8 TensorRT engines on **NVIDIA AGX Orin, 50 W power mode** (provenance: parent-project development reports; the underlying per-output fidelity values for VAD-Small are the `cos_sim` JSONs listed in the References).
+All numbers below are INT8 TensorRT engines on **NVIDIA AGX Orin, 50 W power mode** (parent-project provenance — kept as the matched-era structural comparison; **this repo's latency convention is MAXN**, headline numbers in [power_modes.md](power_modes.md) §4.2/§4.3; the underlying per-output fidelity values for VAD-Small are the `cos_sim` JSONs listed in the References).
 
-> The repo's own **VAD-Base INT8 (PTQ) pair** (built by this repo's chain, real-data PTQ calibration, accuracy-aligned with FP16: cos_sim ≥ 0.9986 on-device, L2(1s) gate 0.7805) is the **final VAD-Base quantized deployment configuration** — measured **E2E 326.7 ms at MAXN / 460.8 ms at 50 W** (docs/power_modes.md §4.3). The table below keeps the parent-project matched-era Base-vs-Small structural comparison.
+> The repo's own **VAD-Base INT8 (PTQ) pair** (built by this repo's chain, real-data PTQ calibration, accuracy-aligned with FP16: cos_sim ≥ 0.9986 on-device, L2(1s) gate 0.7805) is the **final VAD-Base quantized deployment configuration** — measured **E2E 326.7 ms at MAXN** (docs/power_modes.md §4.3). The table below keeps the parent-project matched-era Base-vs-Small structural comparison.
 
 | Module | VAD-Base (Orin INT8) | VAD-Small (Orin INT8) | Speedup |
 |---|---|---|---|
@@ -82,7 +82,7 @@ It is explicitly **not**:
 
 Qualitative expectations only — no numbers are invented here:
 
-- **Deployment cost is structure-determined.** The engine's compute graph, plugin set, and activation volumes do not depend on weight values. A fully trained VAD-Small would deploy through this repo's chain unchanged and hit the **same ~61.3 ms Orin E2E** in 50 W mode (assuming the same precision settings and plugin set).
+- **Deployment cost is structure-determined.** The engine's compute graph, plugin set, and activation volumes do not depend on weight values. A fully trained VAD-Small would deploy through this repo's chain unchanged and hit the **same ~64 ms-class Orin E2E at MAXN** (63.7 ms; 87.4 ms at 50 W — assuming the same precision settings and plugin set).
 - **Accuracy is not structure-determined.** Closed-loop driving scores require full training on the complete Bench2Drive training split. The 2-epoch checkpoint says nothing about what a fully trained VAD-Small would score.
 - **The quantization behavior should carry over** (the calibration statistics depend on activation distributions, which are similar for a converged model), but recalibration on the new checkpoint is required and the fidelity numbers in §3 should be re-measured.
 
