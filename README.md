@@ -1,27 +1,59 @@
-# VAD TensorRT Deployment on x86_64 and NVIDIA AGX Orin
+# VAD TensorRT Deployment on Jetson Orin
 
-End-to-end deployment of **VAD-Base (Bench2Drive port)** through the full TensorRT pipeline — custom plugins → ONNX export → FP16/INT8 engines → pytorch-vs-engine accuracy/latency eval — on an x86_64 dev host (RTX 4090 Laptop, `sm_89`) and NVIDIA Jetson AGX Orin (`sm_87`).
+End-to-end deployment of **VAD-Base [Bench2Drive](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad%2Fvad/adzoo/vad/configs/VAD/VAD_base_e2e_b2d.py)** on NVIDIA Jetson AGX Orin (`sm_87`) and an x86_64 dev host (RTX 4090 Laptop, `sm_89`).
 
-The pipeline is checkpoint-driven and reproducible: every artifact that is not committed (plugins `.so`, ONNX, TRT engines, calibration tensors) is regenerable from the scripts in this repository plus a small set of public inputs (checkpoint, Bench2Drive mini-set).
+## Jetson Orin
 
-## Scope
+| Module (MAXN p50) | VAD-Base INT8 (PTQ) | VAD-Small INT8 | Ratio |
+|---|---|---|---|
+| Backbone | 35.6 ms | 25.3 ms | 1.4x |
+| Head | 291.1 ms | 38.4 ms | **7.6x** |
+| **End-to-end** | **326.7 ms** | **63.7 ms** | **5.1x** |
+| Engine footprint | 107.2 MB (28.0 + 79.2) | 66.0 MB (25.8 + 40.2) | 1.6x |
+| Parameters | 58.38 M | 39.89 M | 1.46x |
+| Head quantization fidelity | cos_sim ≥ 0.9986 vs x86 FP16 (all 9 outputs) | cos_sim 0.99998 vs PyTorch | accuracy-aligned on both configs |
 
-This repository covers (translated from the project's original scope notes):
+> **Orin power-mode comparison** (all four modes measured for the VAD-Small INT8 deployment config and the VAD-Base INT8 (PTQ) deployment config, plus the VAD-Base FP16 verification pair; p50/p90 + clocks/power; 30 W / 15 W entered by rebooting into the mode) — [docs/power_modes.md](docs/power_modes.md).
+> **Orin roofline analysis with evidence**: why INT8 quantization alone cannot reach real-time on the Orin for VAD-Base — the 40,000-BEV-query head runs an almost entirely FP16-pinned kernel mix (measured: zero INT8 kernels execute, DRAM at ~1/3 utilization - not a DRAM wall); see [docs/roofline_analysis.md](docs/roofline_analysis.md).
 
-1. **VAD-Base (Bench2Drive port) on two platforms**: x86_64 @ RTX 4090 Laptop and arm64 @ Jetson AGX Orin.
-2. **Orin roofline analysis with evidence**: why INT8 quantization alone cannot reach real-time on the Orin for VAD-Base — the 40,000-BEV-query head runs an almost entirely FP16-pinned kernel mix (measured: zero INT8 kernels execute, DRAM at ~1/3 utilization - not a DRAM wall); see [docs/roofline_analysis.md](docs/roofline_analysis.md).
-3. **A real-time-capable variant: VAD-Small** (custom, BEV 100x100): which head layers were reduced and by how much (structure + parameter tables) — see [docs/model_variants.md](docs/model_variants.md).
-4. **VAD-Small honesty note**: it was trained for only 2 epochs as a fast verification run and therefore has **no closed-loop driving score**. It exists to probe what model-structure traits buy real-time behavior under the VAD architecture.
-5. **Reference comparison**: VAD-Base vs VAD-Tiny (official nuScenes models) — structure, parameters, and planning metrics — and an estimate of where our VAD-Small lands relative to VAD-Base ([docs/model_variants.md](docs/model_variants.md) §7).
-6. **Autoware integration** (two closed-loop schemes): single-machine (4090 Laptop) and two-machine (4090 Laptop <-> Orin over the USB L4T bridge). **Deferred to the next phase** — this release contains the deployment pipeline only; see the Autoware note in [docs/pipeline_guide.md](docs/pipeline_guide.md).
-7. *(Done)* **Orin power-mode comparison** (all four modes measured for the VAD-Small INT8 deployment config and the VAD-Base INT8 (PTQ) deployment config, plus the VAD-Base FP16 verification pair; p50/p90 + clocks/power; 30 W / 15 W entered by rebooting into the mode) — [docs/power_modes.md](docs/power_modes.md).
-8. *(Deferred)* Re-train VAD-Small on the full Bench2Drive training split to make the small model competitive for closed-loop simulation.
+## x86_64
+
+| Configuration | L2 (1 s) | Latency | Result file |
+|---|---|---|---|
+| PyTorch FP32 (reference) | 0.7300 | 233.3 ms | [log](x86/eval/results/eval_final_20260612.json) |
+| TRT FP16 (static prev-BEV) | 0.7270 | 93.5 ms | [log](x86/eval/results/trt_static_prevbev_results.json) |
+| INT8 backbone + FP16 head | 0.7828 | 88.9 ms | [log](x86/eval/results/eval_int8_bb_fp16_head.json) |
+| INT8 backbone + INT8 head (real-data calib) | 0.7805 | 132.7 ms | [log](x86/eval/results/eval_int8_fixed.json) |
+
+## VAD-Base INT8 vs VAD-Small INT8
+
+| | VAD-Base | VAD-Small |
+|---|---|---|
+| BEV resolution (BEV queries) | 200×200 = 40,000 | 100×100 = 10,000 (**4x** fewer) |
+| BEV encoder / detection decoder / map decoder layers | 6 / 6 / 6 | 3 / 3 / 3 (2x shallower) |
+| FPN sampling levels | 4 | 1 (backbone C5 only) |
+| Temporal queue length | 4 | 3 |
+| Agent / map queries | 300 / 100 | 300 / 100 (unchanged) |
+| Total parameters | 58.38 M | 39.89 M (1.46x fewer) |
+| — pts_bbox_head | 31.59 M | 15.26 M (2.1x) |
+| — img_backbone (ResNet50) | 23.51 M | 23.51 M (unchanged) |
+
+> **Model differences (checkpoint-derived; full table: [docs/model_variants.md](docs/model_variants.md) §2):**
+> **VAD-Small honesty note**: it was trained for only 2 epochs as a fast verification run and therefore has **no closed-loop driving score**. It exists to probe what model-structure traits buy real-time behavior under the VAD architecture.
+
+## Quick Start (x86)
+
+Prerequisites (full matrix in [docs/environment.md](docs/environment.md)):
+- ENV: build it per upstream [INSTALL.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/INSTALL.md) and sanity-check with their [TRAIN_EVAL.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/TRAIN_EVAL.md).
+- Checkpoints: [ckpts/README.md](ckpts/README.md).
+- Data: [data/README.md](data/README.md).
+- Our x86_64: Ubuntu 22.04 + NVIDIA GPU (Ada/Ampere class), CUDA 11.8 toolkit, TRT 10.4 GA tarball as `TRT_ROOT`.
+- **Only two env vars are hard requirements — `TRT_ROOT` and `CUDA_HOME`**. Everything else auto-resolves: `CONDA_BASE` (`$HOME/apps/miniconda3`, fallback `$HOME/miniconda3`), `VAD_DEPLOY_ROOT` (from script location), `VAD_PROJECT_ROOT` (zoo repo auto-discovered next to this repo / sibling / `$HOME`; export only if yours lives elsewhere), and eval engine paths default into `x86/trt_compile/output/`.
+- Every artifact that is not committed (plugins `.so`, ONNX, TRT engines, calibration data) is regenerable from the scripts in this repository.
 
 ## Hardware Platforms
 
-All numbers in this README and in `docs/` were measured on exactly these two devices — latency figures are **not** transferable to other GPUs, accuracy gates are anchored per engine build.
-
-### x86_64 workstation — RTX 4090 **Laptop** GPU
+### x86_64 — RTX 4090 **Laptop** GPU
 
 | Component | Specification |
 |---|---|
@@ -35,188 +67,15 @@ All numbers in this README and in `docs/` were measured on exactly these two dev
 
 **Not a desktop RTX 4090.** The laptop part has roughly half the CUDA cores (~7.7k vs 16.4k), ~57% of the memory bandwidth (576 vs 1008 GB/s), a third of the power budget (175 W vs 450 W) and 16 GB instead of 24 GB VRAM. If you reproduce on a desktop 4090 (or any other GPU), expect **lower** latencies than this README reports — that difference is hardware, not software. Accuracy results (L2) are unaffected by this since they are properties of the engine builds, not of the GPU speed.
 
-### Orin — NVIDIA AGX Orin 64 GB
+### Orin — NVIDIA Jetson AGX Orin 64 GB
 
 | Component | Specification |
 |---|---|
-| SoC | AGX Orin 64 GB, Ampere GPU (**sm_87**), 2048 CUDA cores |
+| SoC | Jetson AGX Orin 64 GB, Ampere GPU (**sm_87**), 2048 CUDA cores |
 | Memory | 64 GB LPDDR5, 204.8 GB/s |
-| Power modes | MAXN / 50 W / 30 W / 15 W (see docs/power_modes.md) |
+| Power modes | MAXN / 50 W / 30 W / 15 W (see [docs/power_modes.md](docs/power_modes.md)) |
 | TensorRT | 10.4.0.26 (tarball) — see docs/environment.md §3.1 for the wheel/tarball libnvinfer caveat |
-| OS | JetPack (L4T), Linux aarch64 |
-
-## Key Results
-
-### x86_64 precision/latency ladder (VAD-Base, 173-frame eval set)
-
-| Configuration | L2 (1 s) | Latency | Result file |
-|---|---|---|---|
-| PyTorch FP32 (reference) | 0.7300 | 233.3 ms | `x86/eval/results/eval_final_20260612.json` |
-| TRT FP16 (static prev-BEV) | 0.7270 | 93.5 ms | `x86/eval/results/trt_static_prevbev_results.json` |
-| INT8 backbone + FP16 head | 0.7828 | 88.9 ms | `x86/eval/results/eval_int8_bb_fp16_head.json` |
-| INT8 backbone + INT8 head (real-data calib) | 0.7805 | 132.7 ms | `x86/eval/results/eval_int8_fixed.json` |
-| INT8 head with random calib (**broken**) | 4.359 | 23.7 ms | cautionary example |
-
-L2(1s) = mean planning L2 distance at 1 s horizon vs ground-truth future ego trajectory, in meters — same metric family as the official VAD planning table. Repro gates for this repo's chain: **FP16 0.727, INT8 0.7805 (each ± 0.01)**. Reference engines rerun deterministically; fresh engine rebuilds vary within ±0.02 (measured, see docs/pipeline_guide.md §5).
-
-### Orin (AGX Orin 64 GB, INT8 deployment configs) — headline: MAXN p50
-
-> **Latency convention:** Orin headline latency in this repo is always **MAXN** (`nvpmodel -m 0` — no clock/power cap, DVFS at the physical ceiling) p50. The power-budget modes are materially slower (E2E MAXN → 50 W → 30 W → 15 W: VAD-Small INT8 63.7 → 87.4 → 196.1 → 384.7 ms; VAD-Base INT8 326.7 → 460.8 → 1074.2 → 2116.6 ms). Per-mode tables with clocks and rail power: [docs/power_modes.md](docs/power_modes.md) §4.2 (Small) / §4.3 (Base).
-
-| Module (MAXN p50) | VAD-Base INT8 (PTQ) | VAD-Small INT8 | Ratio |
-|---|---|---|---|
-| Backbone | 35.6 ms | 25.3 ms | 1.4x |
-| Head | 291.1 ms | 38.4 ms | **7.6x** |
-| **End-to-end** | **326.7 ms** | **63.7 ms** | **5.1x** |
-| Engine footprint | 107.2 MB (28.0 + 79.2) | 66.0 MB (25.8 + 40.2) | 1.6x |
-| Parameters | 58.38 M | 39.89 M | 1.46x |
-| Head quantization fidelity | cos_sim ≥ 0.9986 vs x86 FP16 (all 9 outputs) | cos_sim 0.99998 vs PyTorch | accuracy-aligned on both configs |
-
-Notes on the Orin table:
-
-- **On-device FP16 verification:** the repo's FP16 pair (backbone + head) builds cleanly from a fresh checkout on the AGX Orin 64 GB unit and passes the 10-frame smoke — head-only 286.1 ms avg (3.49 FPS) at MAXN (`arm64/eval/results/orin_fp16_smoke_maxn_2026-10-16.json`; the smoke harness measures the head engine only) — other power modes: docs/power_modes.md §4.1. The VAD-Small INT8 config is measured across all four modes there as well (§4.2: the <100 ms target holds at MAXN and 50 W, breaks at 30 W).
-- **On-device VAD-Base INT8 (PTQ) verification (final Base quantized deployment config):** the repo's INT8 pair builds from the committed calibration caches — or recalibrates on-device when they are absent (both paths verified on this unit) — passes the 10-frame head-only fidelity eval vs the x86 FP16 reference at **cos_sim ≥ 0.9986 on all 9 outputs** (gate 0.99; `arm64/eval/results/orin_int8_ptq_lite.json`), and measures **E2E 326.7 ms at MAXN** — INT8 halves the backbone's latency and footprint (35.6 ms / 28.0 MB vs FP16's 55.4 ms / 54.1 MB) while the head stays FP16-pinned and matches FP16 latency (291.1 ms) — other power modes: [docs/power_modes.md](docs/power_modes.md) §4.3.
-- The MAXN table above uses this repo's own accuracy-clean INT8 builds. A faster VAD-Base head build exists (302.2 ms, parent-era 50 W measurement, vectorized `opt8` plugin at OptLevel=5), but that combination carries a **non-deterministic NaN bug at VAD-Base size on Orin** (~55% of runs) and is not production-usable — see [docs/roofline_analysis.md](docs/roofline_analysis.md) §5.
-- Quantization bought ~1.0x on the VAD-Base head (FP16-pinned kernel mix), while the structural reduction (VAD-Small) bought **7.6x** on the same head (291.1 vs 38.4 ms at MAXN). This is the central finding; see [docs/roofline_analysis.md](docs/roofline_analysis.md) §3.
-- VAD-Small latency is **structure-determined**, not weight-determined: a fully trained VAD-Small deploys through this chain unchanged and hits the same ~64 ms-class Orin E2E at MAXN. See [docs/model_variants.md](docs/model_variants.md) §5.
-
-### VAD-Base INT8 vs VAD-Small INT8 — model differences behind the 5.1x MAXN gap
-
-Both INT8 pairs ship in this repo and share the identical I/O contract (9 output tensors, same plugin set, hidden dim 256) — a VAD-Small engine is a drop-in replacement for a VAD-Base engine. The latency side of the comparison is the MAXN table in the Orin key results above; the model differences that cause the gap:
-
-**Model differences (checkpoint-derived; full table: [docs/model_variants.md](docs/model_variants.md) §2):**
-
-| | VAD-Base | VAD-Small |
-|---|---|---|
-| BEV resolution (BEV queries) | 200×200 = 40,000 | 100×100 = 10,000 (**4x** fewer) |
-| BEV encoder / detection decoder / map decoder layers | 6 / 6 / 6 | 3 / 3 / 3 (2x shallower) |
-| FPN sampling levels | 4 | 1 (backbone C5 only) |
-| Temporal queue length | 4 | 3 |
-| Agent / map queries | 300 / 100 | 300 / 100 (unchanged) |
-| Total parameters | 58.38 M | 39.89 M (1.46x fewer) |
-| — pts_bbox_head | 31.59 M | 15.26 M (2.1x) |
-| — img_backbone (ResNet50) | 23.51 M | 23.51 M (unchanged) |
-
-Read-out: the 5.1x end-to-end gap is almost entirely a **head gap (7.6x)** — driven by the 4x BEV-query reduction plus 2x shallower encoder/decoders — while the backbone (same ResNet50) barely moves (1.4x). Quantization is accuracy-aligned on both configs (Base: x86 L2(1s) gate 0.7805 + on-device cos_sim ≥ 0.9986; Small: output-level cos_sim 0.99998), but the Small checkpoint is a 2-epoch efficiency-validation run, not a competitive closed-loop model ([docs/model_variants.md](docs/model_variants.md) §4). The Base PTQ pair is this repo's own scalar-plugin OptLevel-3 build — faster than the parent-era OptLevel-2 build (docs/model_variants.md §3), same accuracy-clean plugin choice. **Latency at 50 W / 30 W / 15 W, with clocks and rail power per mode: [docs/power_modes.md](docs/power_modes.md) §4.3 (Base) and §4.2 (Small).**
-
-### Lessons worth reading the docs for
-
-- **Calibration quality is make-or-break**: real-frame calibration gave L2 0.7805; a random-tensor calibration produced 4.359 (broken trajectories) at a *better* latency — accuracy gates are mandatory, latency is meaningless without them.
-- **Calibration caches (`.calib`) are portable** across platforms and TRT versions; **engines are not** (neither across `sm_89`/`sm_87` nor across TRT major versions). This repo commits the caches (`data/calib_data/*.calib`) so INT8 builds skip re-calibration; if a cache is absent the builders recalibrate on-device from the real calibration frames — both paths verified on-device.
-- **OBEY vs PREFER precision flags behave differently** with mixed FP16/INT8 networks; the INT8 head builder's "three fixes" story is documented in [docs/pipeline_guide.md](docs/pipeline_guide.md).
-- **Per-layer precision control (MatMul stays FP16)**: INT8-quantizing the head's MatMul chain (attention scores / value projections) collapses accuracy; the builders keep MatMul in FP16 and quantize Conv/GEMM where it pays.
-- **The `opt8` vectorized plugin is 4x faster but NaN-unsafe at VAD-Base size on Orin** (55% of runs) — VAD-Tiny/Small sizes are immune. Production builds use the scalar plugin (OptLevel 2/3).
-- **Pruning was tested and rejected**: −5% parameters → L2 0.730→0.908. Not viable; structural reduction (VAD-Small) was the lever that worked.
-
-## Pipeline Architecture
-
-```
-                        +---------------------------+
- ckpts/vad_b2d_base.pth | Stage 1: TRT plugins      |
- Bench2Drive mini-set   |  MSDeformAttn / Rotate /  |
-        |               |  SelectAndPad -> .so      |
-        v               +------------+--------------+
- [Stage 2] ONNX export  <-------------+
-  export_vad_prev.py -> demo_data (real two-pass prev_bev)
-  export_backbone_model.py -> vad_backbone.onnx (+ _b1 variant)
-  export_head_script.py -> vad_head_withprev.onnx (prev_bev static [40000,1,256])
-        |
-        v
- [Stage 3] TensorRT engine builds
-  build_head_v2.py (BUILD_MODE=mixed)     -> head_withprev_fp16_fixed_v2.engine
-  build_backbone_int8.py (int8_real)      -> backbone_int8.engine
-  build_head_int8.py (real calib cache)   -> head_int8_fixed.engine
-        |
-        v
- [Stage 4] Evaluation (x86/eval/eval_pytorch_vs_trt.py)
-  PyTorch reference vs TRT engines, L2(1s) gate + latency
-  gate: FP16 ~0.727 / INT8 ~0.7805 (+/- 0.01)
-```
-
-The head ONNX exports `prev_bev` **static** ([40000, 1, 256]): the INT8 builders set no optimization profile by design, so the input must be static (a dynamic `prev_bev` makes the build fail with "no optimization profile has been defined"). Outputs stay dynamic; TRT only constrains inputs.
-
-## Repository Layout
-
-```
-vad-trt-edge/
-+-- README.md                    this document
-+-- LICENSE / NOTICE             Apache-2.0; NVIDIA-licensed components in NOTICE
-+-- run_pipeline.sh              x86 one-shot chain (stages 1-4)
-+-- ckpts/README.md              official checkpoint links + placement
-+-- ckpts/                       (gitignored) vad_b2d_base.pth, VAD_small_b2d_fast.pth
-+-- configs/                     deployment/export configs (flattened, self-contained)
-|   +-- VAD_base_e2e_b2d.py      VAD_small_b2d_fast.py
-+-- data/
-|   +-- README.md                Bench2Drive mini-set download/placement guide
-|   +-- b2d_infos_val.pkl, b2d_map_infos.pkl, splits/   committed
-|   +-- bench2drive/             (gitignored) mini-set: maps/ + v1/
-|   +-- calib_data/              *.calib caches committed; *.npz regenerated via tools/
-+-- plugins/                     TRT plugin sources (MSDeformAttn, Rotate, SelectAndPad)
-+-- onnx_export/
-|   +-- scripts/                 export_head_script.py (static prev_bev), export_backbone_model.py,
-|   |                            export_vad_prev.py (two-pass real prev_bev), export_head_model.py
-|   +-- patches/                 ONNX graph patches (patch_head, patch_rotate, bev_deploy)
-|   +-- demo_data/               (gitignored, regenerated by Stage 2)
-|   +-- output/                  (gitignored) vad_backbone*.onnx, vad_head_withprev.onnx
-+-- tools/                       gen_calib_data.py (+ _small), run_gen_calib.sh
-+-- scripts/                     sync_to_orin.sh, run_orin_pipeline.sh, detect_trt_versions.sh
-+-- x86/
-|   +-- plugins_build/build_x86.sh
-|   +-- trt_compile/scripts/     build_head_v2.py, build_backbone_int8.py, build_head_int8.py (+ _mixed)
-|   +-- trt GoldenCompile/output/   (gitignored) engines
-|   +-- eval/                    eval_pytorch_vs_strt.py, profile_vad_modules.py, run_eval_*.sh, results/
-+-- arm64/
-|   +-- plugins_build/build_orin.sh
-|   +-- trt_compile/{fp16,int8}/ Orin engine builders + run scripts
-|   +-- trt_compile/output/      (gitignored)
-|   +-- eval/                    eval_orin*.py, collect_gt_x86.py, run_eval_*.sh, results/
-+-- docs/
-    +-- pipeline_guide.md        full repro manual (per-stage commands + expected outputs/gates)
-    +-- roofline_analysis.md     Orin roofline + BEV-query bottleneck evidence
-    +-- model_variants.md        Base vs Small structure/params, nuScenes reference, estimates
-    +-- power_modes.md           Power-mode latency for 3 engine configs (Small INT8 + Base FP16 across all 4 modes; Base INT8 at MAXN + 50 W)
-    +-- environment.md           both machines env + TRT version matrix + zoo-repo setup
-```
-
-## Quick Start (x86)
-
-Prerequisites (full matrix in [docs/environment.md](docs/environment.md)):
-
-- x86_64 Ubuntu 22.04 + NVIDIA GPU (Ada/Ampere class), CUDA 11.8 toolkit, TRT 10.4 GA tarball as `TRT_ROOT`.
-- **The conda env is the upstream zoo training env — don't invent one**: build it per upstream [INSTALL.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/INSTALL.md) and sanity-check with their [TRAIN_EVAL.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/TRAIN_EVAL.md); once an upstream eval/train job runs in your env, every zoo-importing stage here imports cleanly. This pipeline only needs the env's NAME (`CONDA_ENV`, default `b2d_zoo` — this repo's instance: python 3.8, torch 2.4.1+cu118, tensorrt 10.16.1.11).
-- Checkpoint `ckpts/vad_b2d_base.pth` (links in `ckpts/README.md`) and the Bench2Drive mini-set under `data/bench2drive/` (guide in `data/README.md`).
-- **Only two env vars are hard requirements — `TRT_ROOT` and `CUDA_HOME`**. Everything else auto-resolves: `CONDA_BASE` (`$HOME/apps/miniconda3`, fallback `$HOME/miniconda3`), `VAD_DEPLOY_ROOT` (from script location), `VAD_PROJECT_ROOT` (zoo repo auto-discovered next to this repo / sibling / `$HOME`; export only if yours lives elsewhere), and eval engine paths default into `x86/trt_compile/output/`.
-
-## Pipeline Stages
-
-```bash
-TRT_ROOT=/path/to/TensorRT-10.4.0.26 CUDA_HOME=/usr/local/cuda-11.8 CONDA_ENV=b2d_zoo bash run_pipeline.sh
-```
-
-Per-stage detail (full manual: docs/pipeline_guide.md):
-
-| Stage | Scripts | Outputs (gitignored) | Check |
-|---|---|---|---|
-| 1 | `x86/plugins .so` build | `plugins/build/libplugins.so` | dlopen OK; DT_NEEDED shows `libnvinfer.so.10` |
-| 2 | export_vad_prev / export_backbone_model / export_head_script | `onnx_export/demo_data/`, 3 ONNX | backbone numeric check <=1e-3-class; head prev_bev static [40000,1,256] |
-| 3 | build_head_v2 (BUILD_MODE=mixed), build_backbone_int8 (int8_real), build_head_int8 | 3 engines in `x86/trt_compile/output/` | engines deserialize; ~50-130 MB each |
-| 4 | x86/eval/eval_pytorch_vs_trt.py | `x86/eval/results/*.json` | L2(1s): FP16 0.727 (reference engines), INT8 0.7805 reference / 0.763 fresh rebuild (±0.02 cross-rebuild band) |
-
-## VAD-Small Track
-
-`VAD_small_b2d_fast` (2-epoch fast-run checkpoint) deploys through the repo's chain: `onnx_export/scripts/export_small_onnx.py` → `x86/trt_compile/scripts/build_small_engine.py` (or the Orin small builders under `arm64/trt_compile/int8/`) → `x86/eval/eval_small_pytorch_vs_trt.py`. Calibration data for the small head: `tools/gen_calib_data_small.py`. Structure/params/fidelity findings: [docs/model_variants.md](docs/model_variants.md).
-
-## Documentation Map
-
-| Doc | Contents |
-|---|---|
-| [docs/pipeline_guide.md](docs/pipeline_guide.md) | Full x86 repro manual: per-stage commands, expected outputs, accuracy gates, troubleshooting (plugin linkage, prev_bev static, TRT pairing) |
-| [docs/roofline_analysis.md](docs/roofline_analysis.md) | Orin roofline inputs, module profiling, FP16-pinned head evidence (kernel census + microbench anchors), NaN-bug boundary, precision ladder provenance |
-| [docs/model_variants.md](docs/model_variants.md) | Base vs Small structure/params, "fast" honesty note, nuScenes VAD-Base vs VAD-Tiny reference, where Small sits vs Base |
-| [docs/power_modes.md](docs/power_modes.md) | Latency, clocks and rail power per nvpmodel mode for 3 engine configs (VAD-Small INT8 + VAD-Base FP16 across all 4 modes; VAD-Base INT8 (PTQ) at MAXN + 50 W) and the measurement harness |
-| [docs/environment.md](docs/environment.md) | Both machines' software matrix, the two-TensorRT reality, TRT version matrix, external training repo setup |
-| [data/README.md](data/README.md) | Bench2Drive mini-set: what it is, download, placement |
-| [ckpts/README.md](ckpts/README.md) | Checkpoint provenance and placement (weights are not committed) |
+| OS | JetPack 6.2.2, L4T 36.5.0, Linux aarch64 |
 
 ## License & Acknowledgements
 

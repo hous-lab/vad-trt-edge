@@ -1,6 +1,6 @@
 # Model Variants: VAD-Base vs VAD-Small (fast-trained) — Bench2Drive
 
-This repository ships two model variants of the VAD (Vectorized scene representation for Autonomous Driving) perception head, ported to the Bench2Drive closed-loop benchmark and packaged for TensorRT deployment on x86_64 and NVIDIA AGX Orin:
+This repository ships two model variants of the VAD (Vectorized scene representation for Autonomous Driving) perception head, ported to the Bench2Drive closed-loop benchmark and packaged for TensorRT deployment on x86_64 and Jetson Orin:
 
 - **VAD-Base** — the full-size Bench2Drive port of VAD. This is the reference variant: fully trained, highest accuracy, and the slowest to deploy.
 - **VAD-Small** (`VAD_small_b2d_fast`) — a deployment-oriented downsized variant. It uses the same head I/O contract and plugin set as VAD-Base, so it drops into the identical export → build → quantize → eval chain.
@@ -45,7 +45,7 @@ Key structural invariants: the head I/O contract (9 output tensors — detection
 
 ## 3. Measured deployment results
 
-All numbers below are INT8 TensorRT engines on **NVIDIA AGX Orin, 50 W power mode** (parent-project provenance — kept as the matched-era structural comparison; **this repo's latency convention is MAXN**, headline numbers in [power_modes.md](power_modes.md) §4.2/§4.3; the underlying per-output fidelity values for VAD-Small are the `cos_sim` JSONs listed in the References).
+All numbers below are INT8 TensorRT engines on **NVIDIA Jetson AGX Orin, 50 W power mode** (parent-project provenance — kept as the matched-era structural comparison; **this repo's latency convention is MAXN**, headline numbers in [power_modes.md](power_modes.md) §4.2/§4.3; the underlying per-output fidelity values for VAD-Small are the `cos_sim` JSONs listed in the References).
 
 > The repo's own **VAD-Base INT8 (PTQ) pair** (built by this repo's chain, real-data PTQ calibration, accuracy-aligned with FP16: cos_sim ≥ 0.9986 on-device, L2(1s) gate 0.7805) is the **final VAD-Base quantized deployment configuration** — measured **E2E 326.7 ms at MAXN** (docs/power_modes.md §4.3). The table below keeps the parent-project matched-era Base-vs-Small structural comparison.
 

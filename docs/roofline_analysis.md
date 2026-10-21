@@ -1,6 +1,6 @@
 # Orin Roofline and Bottleneck Analysis
 
-Why is VAD slow on NVIDIA AGX Orin, what actually helped, and what headroom is left? This document is an **evidence-led** analysis: every claim is anchored to a measured number from the result JSONs in this repository (`x86/eval/results/`, `arm64/eval/results/`) or to the parent-project development reports, with caveats stated where comparisons are not apples-to-apples.
+Why is VAD slow on NVIDIA Jetson AGX Orin, what actually helped, and what headroom is left? This document is an **evidence-led** analysis: every claim is anchored to a measured number from the result JSONs in this repository (`x86/eval/results/`, `arm64/eval/results/`) or to the parent-project development reports, with caveats stated where comparisons are not apples-to-apples.
 
 ## 1. Workload characterization
 
@@ -115,7 +115,6 @@ All from `x86/eval/results/*.json`. Metric: planning L2(1s) vs ground truth (low
 | TRT FP16 (static prev-BEV) | 0.7270 | 93.5 ms | `trt_static_prevbev_results.json` |
 | INT8 backbone + FP16 head | 0.7828 | 88.9 ms | `eval_int8_bb_fp16_head.json` |
 | INT8 backbone + INT8 head (real-data calib) | 0.7805 | 132.7 ms | `eval_int8_fixed.json` |
-| INT8 head, random calib (**broken**) | 4.359 | 23.7 ms | cautionary example, §3.3 |
 
 Readings:
 

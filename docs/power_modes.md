@@ -14,9 +14,9 @@ NVIDIA Jetson AGX Orin exposes several `nvpmodel` power modes. For embedded depl
 - **Embedded realism** — a vehicle compute platform runs under a power budget. Measuring only at MAXN (unlimited clocks) hides the power-limited latency you will actually see in the car.
 - **Frequency caps vs power walls** — the modes are *not* "allocate N watts". Each mode fixes per-domain **clock ceilings** plus a power wall. Which one binds first is an empirical question, and for this workload the answer is clear: **clock caps bind everywhere** — no config in any capped mode came near its power wall (§4.1–§4.3).
 
-## 2. Mode table (AGX Orin)
+## 2. Mode table (Jetson Orin)
 
-`nvpmodel` mode IDs for the AGX Orin 64 GB module (per NVIDIA's Platform Power and Performance documentation): `0`=MAXN, `1`=MODE_15W, `2`=MODE_30W, `3`=MODE_50W. Always confirm on your module with `nvpmodel -q` — the ID-to-name mapping is module-specific.
+`nvpmodel` mode IDs for the Jetson Orin 64 GB module (per NVIDIA's Platform Power and Performance documentation): `0`=MAXN, `1`=MODE_15W, `2`=MODE_30W, `3`=MODE_50W. Always confirm on your module with `nvpmodel -q` — the ID-to-name mapping is module-specific.
 
 | Mode | GPU clock ceiling | CPU (A78) ceiling | EMC ceiling | Power wall |
 |---|---|---|---|---|

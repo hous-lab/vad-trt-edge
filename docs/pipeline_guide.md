@@ -113,7 +113,6 @@ python eval_pytorch_vs_trt.py
 | `ModuleNotFoundError: mmcv._ext` from system python | conda activation skipped (CONDA_BASE wrong) | scripts use `${CONDA_ENV:-b2d_zoo}` + `CONDA_BASE` auto-fallback; verify `conda activate b2d_zoo` imports zoo code |
 | zoo import fails at `iou3d_boxes_iou_bev_forward` assert | wrong conda env (p1bevrc ABI mismatch) | use `b2d_zoo` — the only env whose mmcv `_ext` matches the zoo repo |
 | engine deserialize fails | TRT runtime ≠ builder TRT family | see docs/environment.md §2; `scripts/detect_trt_versions.sh` |
-| INT8 L2 catastrophic (>1.0) | calib data not real frames (random tensors) | use real-frame calib (tools/gen_calib_data.py); see roofline doc §3.3 |
 
 ## 7. Orin quick section
 
@@ -134,7 +133,7 @@ python arm64/eval/eval_orin_lite.py \
   --calib-npz data/calib_data/head_calib.npz --num-frames 10
 ```
 
-Verified on the bench unit (AGX Orin 64 GB, MAXN): the FP16 build (backbone 54.1 MB + head 79.0 MB) completes cleanly (zero errors in the build log) and the 10-frame head-only smoke passes at 286.1 ms avg (3.49 FPS) — result file `arm64/eval/results/orin_fp16_smoke_maxn_2026-10-16.json` (the smoke harness measures the head engine only) — per-mode (50/30/15 W) benchmark tables: docs/power_modes.md §4. 30 W/15 W cannot be entered live on this unit (reboot required) — see docs/power_modes.md §4.1.
+Verified on the bench unit (Jetson Orin 64 GB, MAXN): the FP16 build (backbone 54.1 MB + head 79.0 MB) completes cleanly (zero errors in the build log) and the 10-frame head-only smoke passes at 286.1 ms avg (3.49 FPS) — result file `arm64/eval/results/orin_fp16_smoke_maxn_2026-10-16.json` (the smoke harness measures the head engine only) — per-mode (50/30/15 W) benchmark tables: docs/power_modes.md §4. 30 W/15 W cannot be entered live on this unit (reboot required) — see docs/power_modes.md §4.1.
 
 The INT8 build (`run_build_int8_orin.sh`, step 0 links the calib npz) is the **VAD-Base INT8 (PTQ) deployment pair**: real-data calibration (EntropyCalibration2, 64 real frames), MatMul chain pinned FP16, sensitive layers FP32 — the same recipe as the x86 INT8 gate (§5). Calibration is cache-first: both builders reuse the committed `data/calib_data/{backbone,head}_int8_orin.calib` when present (the exact calibration state of the reference engines); if absent, they recalibrate on-device from `data/calib_data/head_calib.npz` — the fallback is not theoretical: the reference head engine's cache was produced exactly that way on this unit (the x86-cache copy arrived under the wrong filename, so the builder fell back; the on-device cache has the same size and the engine passed the fidelity gate below).
 
@@ -160,6 +159,6 @@ Two Orin-specific gotchas hit during bring-up (both now handled in scripts):
 
 Details: docs/power_modes.md §4 (methodology + per-config measured tables for all 4 modes), docs/environment.md §3 (device + connectivity), arm64/trt_compile/{fp16,int8}/ (builders).
 
-## 8. Autoware note
+## 8. Autoware note [Pending]
 
 Autoware closed-loop integration (single-machine and two-machine schemes) is planned for the next phase of this project; the scope is described in README.md item 6 and the deployment engines built here are the input to that work. This repo currently ships no Autoware integration code.
