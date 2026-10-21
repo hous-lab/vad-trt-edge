@@ -61,9 +61,9 @@ L2(1s) = mean planning L2 distance at 1 s horizon vs ground-truth future ego tra
 
 ### Orin (AGX Orin 64 GB, INT8 deployment configs) — headline: MAXN p50
 
-> **Latency convention:** Orin headline latency in this repo is always **MAXN** (`nvpmodel -m 0` — no clock/power cap, DVFS at the physical ceiling) p50. The power-budget modes are materially slower (VAD-Small INT8 E2E 63.7 → 87.4 → 196.1 → 384.7 ms for MAXN → 50 W → 30 W → 15 W). Per-mode tables with clocks and rail power: [docs/power_modes.md](docs/power_modes.md) §4.2 (Small) / §4.3 (Base).
+> **Latency convention:** Orin headline latency in this repo is always **MAXN** (`nvpmodel -m 0` — no clock/power cap, DVFS at the physical ceiling) p50. The power-budget modes are materially slower (E2E MAXN → 50 W → 30 W → 15 W: VAD-Small INT8 63.7 → 87.4 → 196.1 → 384.7 ms; VAD-Base INT8 326.7 → 460.8 → 1074.2 → 2116.6 ms). Per-mode tables with clocks and rail power: [docs/power_modes.md](docs/power_modes.md) §4.2 (Small) / §4.3 (Base).
 
-| Module (MAXN p50, INT8 deployment configs) | VAD-Base INT8 (PTQ) | VAD-Small INT8 | Ratio |
+| Module (MAXN p50) | VAD-Base INT8 (PTQ) | VAD-Small INT8 | Ratio |
 |---|---|---|---|
 | Backbone | 35.6 ms | 25.3 ms | 1.4x |
 | Head | 291.1 ms | 38.4 ms | **7.6x** |

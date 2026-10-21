@@ -69,13 +69,14 @@ HEAD_ENGINE=arm64/trt_compile/output/head_int8_small_orin.engine \
 # VAD-Base INT8 (PTQ) pair (final Base quantized deployment config):
 BB_ENGINE=arm64/trt_compile/output/backbone_int8_orin.engine \
 HEAD_ENGINE=arm64/trt_compile/output/head_int8_orin.engine \
-    bash arm64/eval/run_power_mode_bench.sh 0 3
+    bash arm64/eval/run_power_mode_bench.sh 0 3 2 1
 ```
 
 Methodology notes:
 
 - No `jetson_clocks` pinning: DVFS climbs to the mode's clock ceiling under load, and tegrastats confirms the in-run clock — the measured clock is part of the result, not a controlled variable.
 - Run benches on an idled, thermally settled device. A bench run started immediately after a multi-hour engine build picks up DVFS noise (measured: head p90 744 ms vs 291 ms after idling — same engines, same day); the harness's 3 warm-up runs do not substitute for thermal settle time.
+- `nvpmodel -m` asks an interactive YES/yes reboot-confirmation even when re-setting the already-active mode (hit on this unit); the driver skips the switch when `nvpmodel -q` already reports the target mode. Bypassing it by piping `echo yes | sudo nvpmodel -m X` makes the device AUTO-REBOOT into the requested mode - convenient for entering 30 W / 15 W, surprising otherwise.
 - `SUFFIX=<string>` suffixes result filenames so different engine pairs do not overwrite each other's JSONs — always suffix when benching a non-default pair (an unsuffixed run overwrote the FP16 reference JSONs on the device once; they were restored from the repo's committed copies).
 - Fixed inputs for comparability: the backbone runs on a fixed random tensor [6,3,736,1280]; the head runs on a real calibration frame (`frame_000` of `data/calib_data/head_calib.npz`).
 - The small pair has no small-model calib npz on the device, so its head inputs are **random tensors at the engine's input shapes** (`--random-head-inputs`). Static TRT engines have data-independent latency, so this is valid for latency-only benchmarking (and the JSON's `workload` field records which mode was used).
@@ -126,15 +127,17 @@ Same harness and protocol as §4.1, measured 2026-10-20 on an idled device (ther
 |---|---|---|---|---|---|---|---|
 | MAXN (0) | 1109 / 1300 MHz | 3199 MHz | 25.6 / 33.8 W | 35.6 ms | 291.1 ms | **326.7 ms** | 326.9 ms |
 | 50 W (3) | 748 / 815 MHz | 3199 MHz | 15.4 / 18.3 W | 50.3 ms | 410.5 ms | **460.8 ms** | 461.0 ms |
+| 30 W (2) | 592 / 611 MHz | 3199 MHz | 8.7 / 9.6 W | 121.5 ms | 952.7 ms | **1074.2 ms** | 1075.0 ms |
+| 15 W (1) | 404 / 407 MHz | **2133 MHz** | 5.9 / 6.4 W | 239.8 ms | 1876.8 ms | **2116.6 ms** | 2117.4 ms |
 
 Read-outs (VAD-Base INT8 PTQ):
 
-- **Backbone INT8 pays off**: 55.4 → 35.6 ms at MAXN and 78.8 → 50.3 ms at 50 W (both 1.56x), engine footprint 54.1 → 28.0 MB (−48%). This is where INT8 quantization actually buys something on VAD-Base.
-- **Head INT8 ≈ FP16**: 291.1 vs 282.5 ms at MAXN (+3.0%) and 410.5 vs 396.1 ms at 50 W (+3.6%) — no latency benefit. The head's quantization-sensitive nodes stay FP16-pinned (the MatMul chain), so INT8 adds reformat overhead on an already-FP16 kernel mix; zero INT8 kernels execute in the head (docs/roofline_analysis.md §3.2 kernel census). The head engine is even slightly larger than FP16 (79.2 vs 75.3 MB).
-- Net E2E: **326.7 ms at MAXN (−3.3% vs FP16) and 460.8 ms at 50 W (−3.0%)** — INT8 on VAD-Base buys backbone latency/footprint, not real-time. The real-time story remains VAD-Small INT8 (§4.2: 63.7 ms at MAXN / 87.4 ms at 50 W).
+- **Backbone INT8 pays off at every mode**: 55.4 → 35.6 ms at MAXN and 78.8 → 50.3 ms at 50 W (both 1.56x), 175.2 → 121.5 ms at 30 W (1.44x), 343.3 → 239.8 ms at 15 W (1.43x); engine footprint 54.1 → 28.0 MB (−48%). This is where INT8 quantization actually buys something on VAD-Base.
+- **Head INT8 ≈ FP16 at every mode**: 291.1 vs 282.5 ms at MAXN (+3.0%), 410.5 vs 396.1 ms at 50 W (+3.6%), 952.7 vs 908.7 ms at 30 W (+4.8%), 1876.8 vs 1783.6 ms at 15 W (+5.2%) — no latency benefit. The head's quantization-sensitive nodes stay FP16-pinned (the MatMul chain), so INT8 adds reformat overhead on an already-FP16 kernel mix; zero INT8 kernels execute in the head (docs/roofline_analysis.md §3.2 kernel census). The head engine is even slightly larger than FP16 (79.2 vs 75.3 MB).
+- Net E2E: **326.7 ms at MAXN (−3.3% vs FP16), 460.8 ms at 50 W (−3.0%), 1074.2 ms at 30 W (−0.9%), 2116.6 ms at 15 W (−0.5%)** — INT8 on VAD-Base buys backbone latency/footprint, not real-time. The real-time story remains VAD-Small INT8 (§4.2: 63.7 ms at MAXN / 87.4 ms at 50 W).
 - **Accuracy: passes.** Head-only fidelity vs the x86 FP16 reference over 10 real calibration frames: **cos_sim ≥ 0.9986 on all 9 outputs** (avg 0.9990–1.0000; gate 0.99 aligned / 0.95 acceptable) — `arm64/eval/results/orin_int8_ptq_lite.json`. The x86 L2(1s) pipeline gate for this same recipe (real-data PTQ + MatMul-FP16 pinning) is 0.7805 (docs/pipeline_guide.md §5, within the ±0.01 repro gate and the ±0.02 cross-rebuild band).
 - Clock caps bind, not the power wall (rail peaks 33.8 W in MAXN, 18.3 W in 50 W) — same conclusion as §4.1.
-- Bench provenance: `power_mode_{MAXN,50w}_base_int8.json` + tegrastats logs.
+- Bench provenance: `power_mode_{MAXN,50w,30w,15w}_base_int8.json` + tegrastats logs.
 
 ## 5. References
 

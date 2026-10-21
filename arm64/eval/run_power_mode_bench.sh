@@ -26,6 +26,7 @@ CALIB_NPZ="${CALIB_NPZ:-$REPO_ROOT/data/calib_data/head_calib.npz}"
 REPS="${REPS:-10}"
 OUT_DIR="${OUT_DIR:-$REPO_ROOT/arm64/eval/results/power_modes}"
 MODE_LABELS=([0]="MAXN" [1]="15w" [2]="30w" [3]="50w")
+MODE_NAMES=([0]="MAXN" [1]="MODE_15W" [2]="MODE_30W" [3]="MODE_50W")
 
 mode_name() {
     nvpmodel -q | head -1 | sed 's/NV Power Mode: //'
@@ -36,7 +37,14 @@ for id in "${@:-0 3}"; do
     label="${MODE_LABELS[$id]:-mode$id}${SUFFIX}"
     echo "=== [$id] $label ==="
 
-    sudo -n nvpmodel -m "$id" || { echo "nvpmodel -m $id failed"; exit 1; }
+    # nvpmodel asks an interactive YES/yes reboot-confirmation even when the
+    # requested mode is already active (hit in practice on this unit); skip the
+    # switch entirely if the device already reports the target mode.
+    if [ "$(mode_name)" = "${MODE_NAMES[$id]}" ]; then
+        echo "already in target mode - skipping nvpmodel switch"
+    else
+        sudo -n nvpmodel -m "$id" || { echo "nvpmodel -m $id failed"; exit 1; }
+    fi
     sleep 2
     got="$(mode_name)"
     echo "nvpmodel reports: '$got'"
