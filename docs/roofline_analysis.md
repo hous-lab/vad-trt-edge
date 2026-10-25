@@ -12,7 +12,7 @@ VAD's compute graph has three structurally different parts:
 | BEV encoder (6 layers) | MSDeformAttn spatial cross-attn + temporal self-attn | memory-hierarchy-bound (L1/L2 gathers + activation streams; DRAM measured at ~⅓ utilization, §3.2) |
 | Head decoders (det/map/motion/ego) | deformable/standard attention + FFN | same — see §3.2 kernel census |
 
-Measured module breakdown on x86 (PyTorch profiling, 10 samples, `x86/eval/results/vad_module_profile.json`, VAD-Base):
+Measured module breakdown on x86 (PyTorch profiling, 10 samples, [x86/eval/results/vad_module_profile.json](../x86/eval/results/vad_module_profile.json), VAD-Base):
 
 | Module | Latency | Share of 229.4 ms E2E |
 |---|---|---|
@@ -35,7 +35,7 @@ Development target platform: NVIDIA Jetson AGX Orin 64 GB (Ampere, `sm_87`). Off
 - Memory: 64 GB LPDDR5, **204.8 GB/s**
 - 2× NVDLA v2.0 (never used by this pipeline), 15–60 W configurable module
 
-Measured achievable peaks on the deployment Orin (MAXN; `arm64/eval/microbench_orin.py`, results in `arm64/eval/results/orin_microbench_maxn.json`): **170 GB/s** DRAM copy (83% of datasheet), **21.7 TFLOPS** FP16 GEMM (8192³; ~51% of the dense-peak derivation), **10.5 TOPS** INT8 GEMM via `torch._int_mm` — slower than FP16 in that specific path (a torch/cuBLASLt kernel-selection artifact on sm_87, not the platform INT8 ceiling: TRT IMMA convs reach 1.78× on the backbone, §3.1) — and a **28 µs** per-kernel launch+execute floor (481 kernels per head inference ⇒ ~13.5 ms fixed cost per frame).
+Measured achievable peaks on the deployment Orin (MAXN; [arm64/eval/microbench_orin.py](../arm64/eval/microbench_orin.py), results in [arm64/eval/results/orin_microbench_maxn.json](../arm64/eval/results/orin_microbench_maxn.json)): **170 GB/s** DRAM copy (83% of datasheet), **21.7 TFLOPS** FP16 GEMM (8192³; ~51% of the dense-peak derivation), **10.5 TOPS** INT8 GEMM via `torch._int_mm` — slower than FP16 in that specific path (a torch/cuBLASLt kernel-selection artifact on sm_87, not the platform INT8 ceiling: TRT IMMA convs reach 1.78× on the backbone, §3.1) — and a **28 µs** per-kernel launch+execute floor (481 kernels per head inference ⇒ ~13.5 ms fixed cost per frame).
 
 Two consequences for this workload:
 
@@ -62,7 +62,7 @@ The backbone is conv-dominated and compute-bound at FP16, so it converts most of
 | Head FP16 | 694.1 ms | — |
 | Head INT8 (matched-era build) | 678.8 ms | **1.02×** |
 
-A ~1.0× INT8 speedup used to look like the signature of a module that is **memory-bound at both precisions** — halving arithmetic cost changes nothing if time is spent moving activations. Direct profiling says the truth is sharper: the INT8-quantized head engine **never executes an INT8 kernel**. The recipe quantizes Conv/Gemm only; attention MatMuls stay FP16 by design (§3.3), the MSDeformAttn plugin has no INT8 implementation, and conv is ≈0% of head time — so INT8's 2× arithmetic advantage has no dominant kernel to accelerate. What the head's ~291 ms actually is (full-inference kernel census of an Orin-built INT8-quantized head engine — real-data PTQ calibration, MatMul/Softmax kept FP16 by design — ncu `--set basic`, 481 kernels; `arm64/eval/results/orin_head_kernel_census.json`):
+A ~1.0× INT8 speedup used to look like the signature of a module that is **memory-bound at both precisions** — halving arithmetic cost changes nothing if time is spent moving activations. Direct profiling says the truth is sharper: the INT8-quantized head engine **never executes an INT8 kernel**. The recipe quantizes Conv/Gemm only; attention MatMuls stay FP16 by design (§3.3), the MSDeformAttn plugin has no INT8 implementation, and conv is ≈0% of head time — so INT8's 2× arithmetic advantage has no dominant kernel to accelerate. What the head's ~291 ms actually is (full-inference kernel census of an Orin-built INT8-quantized head engine — real-data PTQ calibration, MatMul/Softmax kept FP16 by design — ncu `--set basic`, 481 kernels; [arm64/eval/results/orin_head_kernel_census.json](../arm64/eval/results/orin_head_kernel_census.json)):
 
 | Kernel class (full-inference census, VAD-Base INT8-quantized head, MAXN) | Share | n | SM% | Mem% | Why it stays FP16 |
 |---|---|---|---|---|---|
@@ -83,13 +83,13 @@ This is also why the x86 profile shows the **larger** head share on Orin (head �
 
 The head's INT8 behavior is bounded by three findings from the INT8 bring-up (parent-project reports; consequences visible in the x86 result JSONs):
 
-1. **Real-data calibration is mandatory for the head.** Random-noise calibration put activation ranges off by ~100× and produced catastrophic trajectories: L2(1s) = **4.359** (`x86/eval/results/eval_int8_bb_int8_head.json` — cautionary example; its 23.7 ms latency is meaningless for a broken-accuracy engine). Real-data calibration restored L2(1s) to **0.7805** (`eval_int8_fixed.json`). The backbone, in contrast, is calibration-insensitive.
+1. **Real-data calibration is mandatory for the head.** Random-noise calibration put activation ranges off by ~100× and produced catastrophic trajectories: L2(1s) = **4.359** ([x86/eval/results/eval_int8_bb_int8_head.json](../x86/eval/results/eval_int8_bb_int8_head.json) — cautionary example; its 23.7 ms latency is meaningless for a broken-accuracy engine). Real-data calibration restored L2(1s) to **0.7805** (`eval_int8_fixed.json`). The backbone, in contrast, is calibration-insensitive.
 2. **MHA MatMuls stay FP16.** Attention `MatMul`s are kept in FP16 (per NVIDIA guidance for transformer attention); quantizing them destabilizes accuracy. Consequence: even a perfect INT8 head only quantizes Conv/Gemm projections, capping the reachable arithmetic advantage. The kernel census (§3.2) confirms the end state on-device: zero INT8 kernels execute in the final INT8-quantized head engine.
 3. **PREFER vs OBEY precision constraints.** Custom plugins that lack INT8 implementations must use `PREFER`-class precision constraints; `OBEY`-class forcing fails the build.
 
 ### 3.4 The dominant lever was structure, not precision
 
-The same chain applied to VAD-Small (4× fewer BEV queries, 2× fewer layers, 4× fewer FPN levels — see `docs/model_variants.md`):
+The same chain applied to VAD-Small (4× fewer BEV queries, 2× fewer layers, 4× fewer FPN levels — see [docs/model_variants.md](model_variants.md)):
 
 | Module (Orin INT8, 50 W) | VAD-Base | VAD-Small | Reduction |
 |---|---|---|---|
@@ -138,17 +138,17 @@ The headline: **structure beats precision**. All precision work combined moved E
 - **Head MatMul subgraph** is still FP16 by design (§3.3). Pushing it to INT8 requires quantization-aware training on the MatMul inputs — out of scope for this release. The census bounds the upside: even a perfect MatMul→INT8 conversion touches only the 21% GEMM share; the 77% plugin+elementwise majority stays FP16-pinned until the plugin gains an INT8 implementation.
 - **Fully trained VAD-Small** inherits the identical structure-determined deployment cost (~64 ms-class at MAXN) while closing the accuracy gap that the 2-epoch fast-run checkpoint leaves open.
 - **DLA** (2× NVDLA v2.0 on AGX Orin) is unused by this pipeline; conv-only subgraphs (backbone) are the natural candidates.
-- **Power modes** matter mostly pre-optimization: after the OptLevel=3 pass the head is no longer compute-starved, so 50 W vs MAXN E2E differ by <1% (see `docs/power_modes.md` §3).
+- **Power modes** matter mostly pre-optimization: after the OptLevel=3 pass the head is no longer compute-starved, so 50 W vs MAXN E2E differ by <1% (see [docs/power_modes.md](power_modes.md) §3).
 
 ## References
 
-- `x86/eval/results/vad_module_profile.json` — module breakdown, architecture summary
-- `x86/eval/results/trt_static_prevbev_results.json` — FP16 ladder entry (93.5 ms / 0.7270)
-- `x86/eval/results/eval_int8_fixed.json` — INT8 ladder entry (132.7 ms / 0.7805)
-- `x86/eval/results/eval_int8_bb_fp16_head.json`, `eval_int8_bb_int8_head.json`, `eval_final_20260612.json` — remaining ladder rows
+- [x86/eval/results/vad_module_profile.json](../x86/eval/results/vad_module_profile.json) — module breakdown, architecture summary
+- [x86/eval/results/trt_static_prevbev_results.json](../x86/eval/results/trt_static_prevbev_results.json) — FP16 ladder entry (93.5 ms / 0.7270)
+- [x86/eval/results/eval_int8_fixed.json](../x86/eval/results/eval_int8_fixed.json) — INT8 ladder entry (132.7 ms / 0.7805)
+- [x86/eval/results/eval_int8_bb_fp16_head.json](../x86/eval/results/eval_int8_bb_fp16_head.json), `eval_int8_bb_int8_head.json`, `eval_final_20260612.json` — remaining ladder rows
 - `arm64/eval/results/eval_orin_fp16_vs_int8*.json` — Orin head FP16-vs-INT8 fidelity and latency (dynamic-shape and static-shape variants)
-- `arm64/eval/results/orin_head_kernel_census.json` — full-inference ncu kernel census of the INT8-quantized head (zero INT8 kernels; per-class shares and SOL medians)
-- `arm64/eval/results/orin_microbench_maxn.json` — platform peak anchors: 170 GB/s DRAM, 21.7 TFLOPS FP16 GEMM, 10.5 TOPS `torch._int_mm` INT8, 28 µs/kernel launch floor (`arm64/eval/microbench_orin.py`)
+- [arm64/eval/results/orin_head_kernel_census.json](../arm64/eval/results/orin_head_kernel_census.json) — full-inference ncu kernel census of the INT8-quantized head (zero INT8 kernels; per-class shares and SOL medians)
+- [arm64/eval/results/orin_microbench_maxn.json](../arm64/eval/results/orin_microbench_maxn.json) — platform peak anchors: 170 GB/s DRAM, 21.7 TFLOPS FP16 GEMM, 10.5 TOPS `torch._int_mm` INT8, 28 µs/kernel launch floor ([arm64/eval/microbench_orin.py](../arm64/eval/microbench_orin.py))
 - Parent-project development reports: Orin 50 W re-measured tables (backbone 85.4→47.9 ms, head 694.1→678.8 ms, E2E ~779.5→~726.7 ms; TRT 10.4 backbone rebuild 30.9 ms; head INT8 OptLevel sweep opt2/opt3/opt5), VAD-Small deployment report (Orin E2E 61.3 ms, head cos_sim 0.99998), opt8 NaN bug report
 - NVIDIA, *Jetson AGX Orin Technical Brief*: <https://www.nvidia.com/content/dam/en-zz/Solutions/gtcf21/jetson-orin/nvidia-jetson-agx-orin-technical-brief.pdf>
 - NVIDIA Jetson Orin product page: <https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/>

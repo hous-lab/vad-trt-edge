@@ -2,7 +2,7 @@
 
 Hardware, software versions, and machine roles for running this pipeline. Two machines are involved: an **x86_64 development host** (export, quantization, x86 engines, eval) and an **NVIDIA Jetson AGX Orin** target (deployment engines and eval). An **external training repository** (the Bench2Drive zoo repo) supplies training and is only needed if you retrain models.
 
-> Paths in the scripts are resolved via environment variables (`VAD_PROJECT_ROOT`, `VAD_DEPLOY_ROOT`) — set them to your checkout locations. `scripts/detect_trt_versions.sh` inventories whatever TensorRT installs exist on the current machine.
+> Paths in the scripts are resolved via environment variables (`VAD_PROJECT_ROOT`, `VAD_DEPLOY_ROOT`) — set them to your checkout locations. [scripts/detect_trt_versions.sh](../scripts/detect_trt_versions.sh) inventories whatever TensorRT installs exist on the current machine.
 
 ## 1. x86_64 development host
 
@@ -38,7 +38,7 @@ There are two TensorRT installations on the dev host, and they serve different r
 1. **Conda `tensorrt` python package** — used by export/quantization tooling and for script-side convenience.
 2. **Tarball TensorRT** (`trtexec`, C++ libraries, plugin build against `TRT_ROOT/include` / `TRT_ROOT/lib`) — used for **engine building and runtime**.
 
-The binding rule: **an engine must be deserialized by a runtime of the same TensorRT version family it was built with.** Point `LD_LIBRARY_PATH` at the tarball's `lib/` directory that matches your engine's build version. `scripts/detect_trt_versions.sh` lists all candidate installs (it scans `/opt/TensorRT-*`, `/usr/local/TensorRT*`, `/usr/src/TensorRT*`, and python packages) — run it first when debugging a deserialize/load failure.
+The binding rule: **an engine must be deserialized by a runtime of the same TensorRT version family it was built with.** Point `LD_LIBRARY_PATH` at the tarball's `lib/` directory that matches your engine's build version. [scripts/detect_trt_versions.sh](../scripts/detect_trt_versions.sh) lists all candidate installs (it scans `/opt/TensorRT-*`, `/usr/local/TensorRT*`, `/usr/src/TensorRT*`, and python packages) — run it first when debugging a deserialize/load failure.
 
 ## 3. Jetson AGX Orin target
 
@@ -52,13 +52,13 @@ The binding rule: **an engine must be deserialized by a runtime of the same Tens
 Notes:
 
 - Both TRT 10.3 and 10.4 have been used on the Orin; engine artifacts record which built them (e.g. `*_trt104.engine` suffixes). Keep runtime and builder versions matched per §2.
-- Plugins are compiled per-architecture: x86 engines need the `sm_89` plugin `.so`, Orin engines need `sm_87` (see `plugins/`, `x86/plugins_build/`, `arm64/plugins_build/`).
-- Power modes (MAXN / 50 W / ...) measurably change latency — see `docs/power_modes.md`; the repo's Orin numbers use the 50 W mode.
+- Plugins are compiled per-architecture: x86 engines need the `sm_89` plugin `.so`, Orin engines need `sm_87` (see [plugins/](../plugins), [x86/plugins_build/](../x86/plugins_build), [arm64/plugins_build/](../arm64/plugins_build)).
+- Power modes (MAXN / 50 W / ...) measurably change latency — see [docs/power_modes.md](power_modes.md); the repo's Orin numbers use the 50 W mode.
 
 ### Host ↔ Orin connectivity
 
 - The Orin is reached over the USB device-mode bridge (L4T default `192.168.55.0/24`; Orin side `192.168.55.1`). An ssh config alias `orin` points at it.
-- Sync with `scripts/sync_to_orin.sh` (rsync, deliberately **no `--delete`**): `bash scripts/sync_to_orin.sh [host] [remote_dir]`.
+- Sync with [scripts/sync_to_orin.sh](../scripts/sync_to_orin.sh) (rsync, deliberately **no `--delete`**): `bash scripts/sync_to_orin.sh [host] [remote_dir]`.
 - **Clock drift caveat (observed on this unit):** this Orin unit's system clock can lag by weeks (no RTC battery / NTP on the test bench) - remote file mtimes look stale even right after a sync. Verify fresh artifacts by size or content hash, not by mtime; on-device build logs' timestamps likewise.
 - USB-bridge throughput is limited (~292 Mb/s measured over rsync on this link). Large checkpoints (the base checkpoint is ~667 MB ≈ 20 minutes at that rate) are **excluded from the default sync list** — transfer them via USB drive or shared storage.
 
@@ -90,7 +90,7 @@ export LD_LIBRARY_PATH=/usr/src/TensorRT-10.4.0.26/lib:${LD_LIBRARY_PATH:-}
 
 Cross-platform portability rules (learned the hard way, see parent-project reports):
 
-- **Calibration caches (`.calib`) are portable** across platforms and TRT versions — they are plain activation-range tables. Commit them, reuse them (`data/calib_data/`).
+- **Calibration caches (`.calib`) are portable** across platforms and TRT versions — they are plain activation-range tables. Commit them, reuse them ([data/calib_data/](../data/calib_data)).
 - **Engines (`.engine`) are NOT portable** — neither across GPU architectures (`sm_89` vs `sm_87`) nor across TRT major versions. Rebuild per platform.
 
 ## 5. External training repository (retraining only)
@@ -98,10 +98,10 @@ Cross-platform portability rules (learned the hard way, see parent-project repor
 Training does not happen in this repository. The models were trained in a Bench2Drive zoo repository (mmcv/mmdet3d-based), referenced from scripts via `VAD_PROJECT_ROOT`. The conda env this pipeline runs in is simply the zoo repo's development environment: **set it up by following the upstream docs, not custom instructions here** (this project's instance is named `b2d_zoo`; the name is arbitrary — scripts take `CONDA_ENV`).
 
 1. Build the zoo env per upstream [INSTALL.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/INSTALL.md) (mmcv-full CUDA ops need a source build against your CUDA version).
-2. Full dataset per upstream [DATA_PREP.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/DATA_PREP.md) — only needed for retraining; pipeline-only use needs just the bundled mini-set (`data/README.md`).
+2. Full dataset per upstream [DATA_PREP.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/DATA_PREP.md) — only needed for retraining; pipeline-only use needs just the bundled mini-set ([data/README.md](../data/README.md)).
 3. **Sanity gate:** run one upstream eval or training job per [TRAIN_EVAL.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/TRAIN_EVAL.md). Once an upstream job runs in your env, every zoo-importing stage of this pipeline (ONNX export, calibration data, eval) imports cleanly.
 4. Then point this pipeline at the env: `CONDA_ENV=<name>` (+ `VAD_PROJECT_ROOT=<zoo-path>` if the zoo checkout is not next to this repo or in `$HOME` — `run_pipeline.sh` searches those locations automatically).
-5. Training configs: `adzoo/vad/configs/VAD/` in the zoo repo (see `docs/model_variants.md` §6 for the config names and the naming bridge).
+5. Training configs: `adzoo/vad/configs/VAD/` in the zoo repo (see [docs/model_variants.md](model_variants.md) §6 for the config names and the naming bridge).
 
 ## 6. Verification checklist
 
@@ -120,4 +120,4 @@ ssh orin 'nvpmodel -q && trtexec --version'  # target reachability + TRT
 - NVIDIA Jetson AGX Orin Technical Brief (hardware specs): <https://www.nvidia.com/content/dam/en-zz/Solutions/gtcf21/jetson-orin/nvidia-jetson-agx-orin-technical-brief.pdf>
 - Bench2Drive: <https://github.com/Thinklab-SJTU/Bench2Drive> (paper: <https://arxiv.org/abs/2406.03877>)
 - VAD: <https://github.com/hustvl/VAD> (paper: <https://arxiv.org/abs/2303.12077>)
-- Parent-project environment notes and platform reports (`docs/` of the development repository).
+- Parent-project environment notes and platform reports ([docs/](.) of the development repository).

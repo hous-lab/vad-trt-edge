@@ -2,6 +2,8 @@
 
 End-to-end deployment of **VAD-Base [Bench2Drive](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad%2Fvad/adzoo/vad/configs/VAD/VAD_base_e2e_b2d.py)** on NVIDIA Jetson AGX Orin (`sm_87`) and an x86_64 dev host (RTX 4090 Laptop, `sm_89`).
 
+> **Status: Active** — results last verified on x86_64 (RTX 4090 Laptop, Ubuntu 22.04, CUDA 11.8, TensorRT 10.4 GA tarball + 10.16 pip wheel, torch 2.4.1+cu118; 2026-10) and NVIDIA Jetson AGX Orin 64 GB (JetPack 6.2.2, L4T 36.5.0, TensorRT 10.4.0.26; 2026-10). Issues and PRs are welcome; engine-build questions are best filed with a build log attached.
+
 ## Jetson Orin
 
 | Module (MAXN p50) | VAD-Base INT8 (PTQ) | VAD-Small INT8 | Ratio |
@@ -13,7 +15,7 @@ End-to-end deployment of **VAD-Base [Bench2Drive](https://github.com/Thinklab-SJ
 | Parameters | 58.38 M | 39.89 M | 1.46x |
 | Head quantization fidelity | cos_sim ≥ 0.9986 vs x86 FP16 (all 9 outputs) | cos_sim 0.99998 vs PyTorch | accuracy-aligned on both configs |
 
-> **Orin power-mode comparison** (all four modes measured for the VAD-Small INT8 deployment config and the VAD-Base INT8 (PTQ) deployment config, plus the VAD-Base FP16 verification pair; p50/p90 + clocks/power; 30 W / 15 W entered by rebooting into the mode) — [docs/power_modes.md](docs/power_modes.md).
+> **Orin power-mode comparison** (all four modes measured for the VAD-Small INT8 deployment config and the VAD-Base INT8 (PTQ) deployment config, plus the VAD-Base FP16 verification pair; p50/p90 + clocks/power, 3 warm-up + 10 timed runs per engine, no `jetson_clocks` — DVFS to the mode's ceiling; 30 W / 15 W entered by rebooting into the mode) — [docs/power_modes.md](docs/power_modes.md).
 > **Orin roofline analysis with evidence**: why INT8 quantization alone cannot reach real-time on the Orin for VAD-Base — the 40,000-BEV-query head runs an almost entirely FP16-pinned kernel mix (measured: zero INT8 kernels execute, DRAM at ~1/3 utilization - not a DRAM wall); see [docs/roofline_analysis.md](docs/roofline_analysis.md).
 
 ## x86_64
@@ -24,6 +26,8 @@ End-to-end deployment of **VAD-Base [Bench2Drive](https://github.com/Thinklab-SJ
 | TRT FP16 (static prev-BEV) | 0.7270 | 93.5 ms | [log](x86/eval/results/trt_static_prevbev_results.json) |
 | INT8 backbone + FP16 head | 0.7828 | 88.9 ms | [log](x86/eval/results/eval_int8_bb_fp16_head.json) |
 | INT8 backbone + INT8 head (real-data calib) | 0.7805 | 132.7 ms | [log](x86/eval/results/eval_int8_fixed.json) |
+
+> x86 latency column: **mean per-frame model-inference time** over the 173-frame eval (timed region = the model forward only; data loading excluded; first frame included, no warm-up exclusion), evaluated on the RTX 4090 Laptop above with torch 2.4.1+cu118 (PyTorch row) and TensorRT 10.4-built engines (TRT rows). L2(1 s) = planning L2 error vs ground truth over the 133 valid frames. For p50/p90 Orin numbers see [docs/power_modes.md](docs/power_modes.md).
 
 ## VAD-Base INT8 vs VAD-Small INT8
 
@@ -74,7 +78,7 @@ Prerequisites (full matrix in [docs/environment.md](docs/environment.md)):
 | SoC | Jetson AGX Orin 64 GB, Ampere GPU (**sm_87**), 2048 CUDA cores |
 | Memory | 64 GB LPDDR5, 204.8 GB/s |
 | Power modes | MAXN / 50 W / 30 W / 15 W (see [docs/power_modes.md](docs/power_modes.md)) |
-| TensorRT | 10.4.0.26 (tarball) — see docs/environment.md §3.1 for the wheel/tarball libnvinfer caveat |
+| TensorRT | 10.4.0.26 (tarball) — see [docs/environment.md](docs/environment.md) §3.1 for the wheel/tarball libnvinfer caveat |
 | OS | JetPack 6.2.2, L4T 36.5.0, Linux aarch64 |
 
 ## License & Acknowledgements

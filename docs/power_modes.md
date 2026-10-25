@@ -2,11 +2,15 @@
 
 NVIDIA Jetson AGX Orin exposes several `nvpmodel` power modes. For embedded deployment work the distinction matters: a fixed power budget does **not** mean a fixed latency, and the mode you measure under determines whether your latency numbers are reproducible. This document records what was measured on the development Orin across all four `nvpmodel` modes for three engine configurations, plus a reproducible measurement methodology.
 
-> Measured on an AGX Orin 64 GB module (TensorRT 10.4.0, torch 2.8.0, 2026-10). **Latency convention: headline Orin latency numbers elsewhere in this repo are MAXN p50 — this document is the per-mode reference (50/30/15 W included).** Three engine configurations, all in `arm64/eval/results/power_modes/` (per-mode JSONs with per-run latencies + tegrastats logs). Two quantized deployment configurations:
+> Measured on an AGX Orin 64 GB module (TensorRT 10.4.0, torch 2.8.0, 2026-10). **Latency convention: headline Orin latency numbers elsewhere in this repo are MAXN p50 — this document is the per-mode reference (50/30/15 W included).** Three engine configurations, all in [arm64/eval/results/power_modes/](../arm64/eval/results/power_modes) (per-mode JSONs with per-run latencies + tegrastats logs). Two quantized deployment configurations:
 > - **VAD-Small INT8** (§4.2) — the final deployment configuration, the model carrying the **<100 ms Orin target**.
 > - **VAD-Base INT8 (PTQ)** (§4.3) — the final VAD-Base quantized deployment configuration: accuracy-aligned with the FP16 pair, backbone latency/footprint halved, E2E −3%.
 >
 > plus the **VAD-Base FP16 verification pair** (§4.1), kept as reference data, the accuracy anchor for the PTQ pair, and for cross-config scaling read-outs.
+>
+> **Measurement metadata** — Hardware: Jetson AGX Orin 64 GB (`sm_87`), JetPack 6.2.2 / L4T 36.5.0, TensorRT 10.4.0.26 tarball engines (pip `tensorrt` 10.4.0 wheel + tarball `libnvinfer`, see [docs/environment.md](environment.md) §3.1). Measurement: device idled to thermal steady state before each run; 3 warm-up + 10 timed runs per engine; statistic = p50/p90 (mean also recorded in the JSONs); timed region = engine forward only; E2E = backbone p50 + head p50. Clock policy: no `jetson_clocks` — DVFS free to run at the mode's ceiling; 30 W / 15 W entered by rebooting into the mode. Accuracy is not re-measured per power mode (precision and engines are mode-independent; accuracy tables live in the README ladder and §4 fidelity checks).
+>
+> **Baseline limitation**: the on-device reference is the **FP16 TRT pair** (§4.1) — a PyTorch baseline was not measured on the Orin (no torch zoo env on the device), so FP16-vs-INT8 on-device deltas are TRT-internal comparisons. The PyTorch FP32 reference exists for x86 in the README ladder.
 
 ## 1. Why power modes matter
 
@@ -53,7 +57,7 @@ Practical notes from the same measurements:
 
 ## 4. Reproducible measurement methodology
 
-`arm64/eval/power_mode_bench.py` and its driver `arm64/eval/run_power_mode_bench.sh` (run on the Orin) implement the protocol. Per mode: switch via `nvpmodel -m`, **verify the switch took effect** (`nvpmodel -q`), load both engines once, 3 warm-up + N timed runs (default 10) per engine on fixed inputs, `tegrastats --interval 100` sampling clocks and rail power during the timed window, per-run latencies with p50/p90/mean into one JSON per mode; MAXN is restored at the end.
+[arm64/eval/power_mode_bench.py](../arm64/eval/power_mode_bench.py) and its driver [arm64/eval/run_power_mode_bench.sh](../arm64/eval/run_power_mode_bench.sh) (run on the Orin) implement the protocol. Per mode: switch via `nvpmodel -m`, **verify the switch took effect** (`nvpmodel -q`), load both engines once, 3 warm-up + N timed runs (default 10) per engine on fixed inputs, `tegrastats --interval 100` sampling clocks and rail power during the timed window, per-run latencies with p50/p90/mean into one JSON per mode; MAXN is restored at the end.
 
 All three engine configurations are benched with the same harness via env overrides:
 
@@ -121,7 +125,7 @@ Read-outs (VAD-Small INT8):
 
 ### 4.3 VAD-Base INT8 (PTQ) — the final VAD-Base quantized deployment config
 
-Same harness and protocol as §4.1, measured 2026-10-20 on an idled device (thermal-settle note above). Engines: `backbone_int8_orin.engine` (28.0 MB) + `head_int8_orin.engine` (79.2 MB), built by this repo's Orin chain (docs/pipeline_guide.md §7) with real-data PTQ calibration (EntropyCalibration2 over the 64 real frames of `head_calib.npz`; the backbone reuses the committed cache, and the committed head cache is the product of on-device calibration — fallback verified equivalent, see read-outs).
+Same harness and protocol as §4.1, measured 2026-10-20 on an idled device (thermal-settle note above). Engines: `backbone_int8_orin.engine` (28.0 MB) + `head_int8_orin.engine` (79.2 MB), built by this repo's Orin chain ([docs/pipeline_guide.md](pipeline_guide.md) §7) with real-data PTQ calibration (EntropyCalibration2 over the 64 real frames of `head_calib.npz`; the backbone reuses the committed cache, and the committed head cache is the product of on-device calibration — fallback verified equivalent, see read-outs).
 
 | Mode | GPU clock mean/max | EMC | VDD_GPU_SOC rail (mean/max) | Backbone p50 | Head p50 | **E2E p50** | E2E p90 |
 |---|---|---|---|---|---|---|---|
@@ -133,14 +137,14 @@ Same harness and protocol as §4.1, measured 2026-10-20 on an idled device (ther
 Read-outs (VAD-Base INT8 PTQ):
 
 - **Backbone INT8 pays off at every mode**: 55.4 → 35.6 ms at MAXN and 78.8 → 50.3 ms at 50 W (both 1.56x), 175.2 → 121.5 ms at 30 W (1.44x), 343.3 → 239.8 ms at 15 W (1.43x); engine footprint 54.1 → 28.0 MB (−48%). This is where INT8 quantization actually buys something on VAD-Base.
-- **Head INT8 ≈ FP16 at every mode**: 291.1 vs 282.5 ms at MAXN (+3.0%), 410.5 vs 396.1 ms at 50 W (+3.6%), 952.7 vs 908.7 ms at 30 W (+4.8%), 1876.8 vs 1783.6 ms at 15 W (+5.2%) — no latency benefit. The head's quantization-sensitive nodes stay FP16-pinned (the MatMul chain), so INT8 adds reformat overhead on an already-FP16 kernel mix; zero INT8 kernels execute in the head (docs/roofline_analysis.md §3.2 kernel census). The head engine is even slightly larger than FP16 (79.2 vs 75.3 MB).
+- **Head INT8 ≈ FP16 at every mode**: 291.1 vs 282.5 ms at MAXN (+3.0%), 410.5 vs 396.1 ms at 50 W (+3.6%), 952.7 vs 908.7 ms at 30 W (+4.8%), 1876.8 vs 1783.6 ms at 15 W (+5.2%) — no latency benefit. The head's quantization-sensitive nodes stay FP16-pinned (the MatMul chain), so INT8 adds reformat overhead on an already-FP16 kernel mix; zero INT8 kernels execute in the head ([docs/roofline_analysis.md](roofline_analysis.md) §3.2 kernel census). The head engine is even slightly larger than FP16 (79.2 vs 75.3 MB).
 - Net E2E: **326.7 ms at MAXN (−3.3% vs FP16), 460.8 ms at 50 W (−3.0%), 1074.2 ms at 30 W (−0.9%), 2116.6 ms at 15 W (−0.5%)** — INT8 on VAD-Base buys backbone latency/footprint, not real-time. The real-time story remains VAD-Small INT8 (§4.2: 63.7 ms at MAXN / 87.4 ms at 50 W).
-- **Accuracy: passes.** Head-only fidelity vs the x86 FP16 reference over 10 real calibration frames: **cos_sim ≥ 0.9986 on all 9 outputs** (avg 0.9990–1.0000; gate 0.99 aligned / 0.95 acceptable) — `arm64/eval/results/orin_int8_ptq_lite.json`. The x86 L2(1s) pipeline gate for this same recipe (real-data PTQ + MatMul-FP16 pinning) is 0.7805 (docs/pipeline_guide.md §5, within the ±0.01 repro gate and the ±0.02 cross-rebuild band).
+- **Accuracy: passes.** Head-only fidelity vs the x86 FP16 reference over 10 real calibration frames: **cos_sim ≥ 0.9986 on all 9 outputs** (avg 0.9990–1.0000; gate 0.99 aligned / 0.95 acceptable) — [arm64/eval/results/orin_int8_ptq_lite.json](../arm64/eval/results/orin_int8_ptq_lite.json). The x86 L2(1s) pipeline gate for this same recipe (real-data PTQ + MatMul-FP16 pinning) is 0.7805 ([docs/pipeline_guide.md](pipeline_guide.md) §5, within the ±0.01 repro gate and the ±0.02 cross-rebuild band).
 - Clock caps bind, not the power wall (rail peaks 33.8 W in MAXN, 18.3 W in 50 W) — same conclusion as §4.1.
 - Bench provenance: `power_mode_{MAXN,50w,30w,15w}_base_int8.json` + tegrastats logs.
 
 ## 5. References
 
-- This repo's benchmark: `arm64/eval/power_mode_bench.py` + `arm64/eval/run_power_mode_bench.sh`, results in `arm64/eval/results/power_modes/` — per-config per-mode JSONs (`power_mode_<mode>.json` FP16, `power_mode_<mode>_small.json`, `power_mode_<mode>_base_int8.json`) with per-run latencies (raw tegrastats logs stay local, gitignored).
+- This repo's benchmark: [arm64/eval/power_mode_bench.py](../arm64/eval/power_mode_bench.py) + [arm64/eval/run_power_mode_bench.sh](../arm64/eval/run_power_mode_bench.sh), results in [arm64/eval/results/power_modes/](../arm64/eval/results/power_modes) — per-config per-mode JSONs (`power_mode_<mode>.json` FP16, `power_mode_<mode>_small.json`, `power_mode_<mode>_base_int8.json`) with per-run latencies (raw tegrastats logs stay local, gitignored).
 - Engine provenance: the FP16 pair is built by this repo's chain (docs/pipeline_guide.md §7); the small pair is the parent project's Orin builds; the Base INT8 pair is built by this repo's own chain (§4.3). Engines are sm_87 (Orin) — gitignored, rebuild per the scripts above.
 - Earlier measurements: head-only smoke results (`arm64/eval/results/orin_fp16_smoke_*.json`), §3 parent-project A/B. NVIDIA docs: Platform Power and Performance <https://docs.nvidia.com/jetson/archives/r35.1/DeveloperGuide/text/SD/PlatformPowerAndPerformance/JetsonOrinNxSeriesAndJetsonAgxOrinSeries.html>; nvpmodel/jetson_clocks admin guide <https://docs.nvidia.com/jetson/archives/r35.1/AdminGuide/topics/workflow_development_tools.html>.

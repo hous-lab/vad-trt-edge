@@ -16,8 +16,8 @@ During development the small variant was called **"tiny"** (`VAD_tiny_e2e_b2d_fa
 | Open-source name (this repo) | Dev / training name (external zoo repo) | Where it appears |
 |---|---|---|
 | `VAD_small_b2d_fast` | `VAD_tiny_e2e_b2d_fast` | model / checkpoint name |
-| `configs/VAD_small_b2d_fast.py` | `adzoo/vad/configs/VAD/VAD_tiny_e2e_b2d_fast.py` | training config (zoo repo) |
-| `configs/VAD_small_b2d_fast.py` | `configs/VAD_tiny_e2e_b2d_fast.py` | flattened deployment config (this repo, pre-rename) |
+| [configs/VAD_small_b2d_fast.py](../configs/VAD_small_b2d_fast.py) | `adzoo/vad/configs/VAD/VAD_tiny_e2e_b2d_fast.py` | training config (zoo repo) |
+| [configs/VAD_small_b2d_fast.py](../configs/VAD_small_b2d_fast.py) | `configs/VAD_tiny_e2e_b2d_fast.py` | flattened deployment config (this repo, pre-rename) |
 | `ckpts/VAD_small_b2d_fast.pth` | `work_dirs/vad_tiny_e2e_b2d_fast/epoch_2.pth` | checkpoint (2-epoch fast run) |
 
 If you cross-reference the training repository's docs, expect to see `tiny` where this repo says `small`. They are the same model.
@@ -47,7 +47,7 @@ Key structural invariants: the head I/O contract (9 output tensors — detection
 
 All numbers below are INT8 TensorRT engines on **NVIDIA Jetson AGX Orin, 50 W power mode** (parent-project provenance — kept as the matched-era structural comparison; **this repo's latency convention is MAXN**, headline numbers in [power_modes.md](power_modes.md) §4.2/§4.3; the underlying per-output fidelity values for VAD-Small are the `cos_sim` JSONs listed in the References).
 
-> The repo's own **VAD-Base INT8 (PTQ) pair** (built by this repo's chain, real-data PTQ calibration, accuracy-aligned with FP16: cos_sim ≥ 0.9986 on-device, L2(1s) gate 0.7805) is the **final VAD-Base quantized deployment configuration** — measured **E2E 326.7 ms at MAXN** (docs/power_modes.md §4.3). The table below keeps the parent-project matched-era Base-vs-Small structural comparison.
+> The repo's own **VAD-Base INT8 (PTQ) pair** (built by this repo's chain, real-data PTQ calibration, accuracy-aligned with FP16: cos_sim ≥ 0.9986 on-device, L2(1s) gate 0.7805) is the **final VAD-Base quantized deployment configuration** — measured **E2E 326.7 ms at MAXN** ([docs/power_modes.md](power_modes.md) §4.3). The table below keeps the parent-project matched-era Base-vs-Small structural comparison.
 
 | Module | VAD-Base (Orin INT8) | VAD-Small (Orin INT8) | Speedup |
 |---|---|---|---|
@@ -61,8 +61,8 @@ Output-fidelity check for VAD-Small (TRT INT8 head engine vs PyTorch GPU referen
 
 Two caveats on the table above:
 
-1. The VAD-Base column is the *scalar-plugin* INT8 build (OptLevel=2). A faster VAD-Base head build exists (302.2 ms head with the vectorized `opt8` plugin and OptLevel=5), but it is **not production-usable** — that plugin combination has a non-deterministic NaN bug at VAD-Base size on Orin (~55% of runs; see `docs/roofline_analysis.md` §5). 726.7 ms is the accuracy-clean VAD-Base baseline.
-2. Parameters shrink only 1.46× while latency shrinks ~12×, because head latency is driven by **activation volume / memory bandwidth**, not by weight count (see `docs/roofline_analysis.md`).
+1. The VAD-Base column is the *scalar-plugin* INT8 build (OptLevel=2). A faster VAD-Base head build exists (302.2 ms head with the vectorized `opt8` plugin and OptLevel=5), but it is **not production-usable** — that plugin combination has a non-deterministic NaN bug at VAD-Base size on Orin (~55% of runs; see [docs/roofline_analysis.md](roofline_analysis.md) §5). 726.7 ms is the accuracy-clean VAD-Base baseline.
+2. Parameters shrink only 1.46× while latency shrinks ~12×, because head latency is driven by **activation volume / memory bandwidth**, not by weight count (see [docs/roofline_analysis.md](roofline_analysis.md)).
 
 ## 4. What "fast" means — and does not mean
 
@@ -90,9 +90,9 @@ Qualitative expectations only — no numbers are invented here:
 
 Training happens in the external Bench2Drive zoo repository, not in this repo. This repo's `configs/` directory holds **deployment/export configs** (flattened, self-contained copies used by the ONNX export and engine-build steps); the training configs live in the zoo repo.
 
-1. Set up the zoo repo and the Bench2Drive dataset — see `docs/environment.md` (§ External training repository).
+1. Set up the zoo repo and the Bench2Drive dataset — see [docs/environment.md](environment.md) (§ External training repository).
 2. Train with the zoo-repo training config `adzoo/vad/configs/VAD/VAD_tiny_e2e_b2d_fast.py` (dev naming). For a production-grade small model, extend the schedule well beyond the 2-epoch fast run used for the shipped checkpoint.
-3. Copy the resulting checkpoint into `ckpts/` and regenerate calibration data (`tools/run_gen_calib.sh`) before building INT8 engines — calibration statistics are checkpoint-specific.
+3. Copy the resulting checkpoint into `ckpts/` and regenerate calibration data ([tools/run_gen_calib.sh](../tools/run_gen_calib.sh)) before building INT8 engines — calibration statistics are checkpoint-specific.
 4. If you retrain VAD-Base, the same steps apply with the zoo repo's `VAD_base_e2e_b2d.py` config.
 
 ## 7. Reference: official VAD-Base vs VAD-Tiny (nuScenes)

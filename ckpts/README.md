@@ -1,6 +1,6 @@
 # Checkpoints
 
-Weights used by the deployment pipeline. Both files are hundreds of MB, so they are **not stored in this repository** — this file records how to obtain each one and how to verify it after download. Place downloaded files in this directory (`ckpts/`). The in-house weight lives on the project's Hugging Face repo **[hous-lab/vad-trt-edge](https://huggingface.co/hous-lab/vad-trt-edge)** (files + SHA-256 table below; `vad_b2d_base.pth` stays upstream-only).
+Weights used by the deployment pipeline. Both files are hundreds of MB, so they are **not stored in this repository** — this file records how to obtain each one and how to verify it after download. Place downloaded files in this directory ([ckpts/](.)). The in-house weight lives on the project's Hugging Face repo **[hous-lab/vad-trt-edge](https://huggingface.co/hous-lab/vad-trt-edge)** (files + SHA-256 table below; `vad_b2d_base.pth` stays upstream-only).
 
 | File | Size | SHA-256 |
 |---|---|---|
@@ -24,20 +24,20 @@ It ships with the upstream `VAD_base_e2e_b2d` training config (`adzoo/vad/config
 
 ## 2. `VAD_small_b2d_fast.pth` — in-house VAD-Small (cloud download)
 
-VAD-Small trained with a 2-epoch fast schedule on a 100-frame subset — an efficiency-validation weight, **not a competitive model** (see `docs/model_variants.md` §4). Distributed via the project's Hugging Face repo:
+VAD-Small trained with a 2-epoch fast schedule on a 100-frame subset — an efficiency-validation weight, **not a competitive model** (see [docs/model_variants.md](../docs/model_variants.md) §4). Distributed via the project's Hugging Face repo:
 
 - **Download link: <https://huggingface.co/hous-lab/vad-trt-edge/blob/main/VAD_small_b2d_fast.pth>** (mirror: <https://hf-mirror.com/hous-lab/vad-trt-edge/blob/main/VAD_small_b2d_fast.pth>)
 
-To reproduce: set up the training environment (`docs/environment.md` §5) and run the `VAD_small_b2d_fast` schedule from `configs/VAD_small_b2d_fast.py` in the zoo repository.
+To reproduce: set up the training environment ([docs/environment.md](../docs/environment.md) §5) and run the `VAD_small_b2d_fast` schedule from [configs/VAD_small_b2d_fast.py](../configs/VAD_small_b2d_fast.py) in the zoo repository.
 
 ## Notes
 
 - Checkpoint file sizes include FP32 weights **plus optimizer state** (AdamW), so they are larger than the parameter counts suggest (VAD-Base: 58.38 M params; VAD-Small: 39.89 M params).
-- All checkpoints share the same head I/O contract; any of them flows through the same export → build → eval chain. VAD-Small additionally needs its calibration data regenerated if you retrain (calibration statistics are checkpoint-specific — `tools/run_gen_calib.sh`).
+- All checkpoints share the same head I/O contract; any of them flows through the same export → build → eval chain. VAD-Small additionally needs its calibration data regenerated if you retrain (calibration statistics are checkpoint-specific — [tools/run_gen_calib.sh](../tools/run_gen_calib.sh)).
 
 ## References
 
-- Variant structure and naming: `docs/model_variants.md`
-- Training-environment setup: `docs/environment.md` §5
+- Variant structure and naming: [docs/model_variants.md](../docs/model_variants.md)
+- Training-environment setup: [docs/environment.md](../docs/environment.md) §5
 - Architecture/code upstream: [VAD](https://github.com/hustvl/VAD) (Apache-2.0), [Bench2Drive](https://github.com/Thinklab-SJTU/Bench2Drive)
 - Weights release: [Bench2DriveZoo](https://github.com/Thinklab-SJTU/Bench2DriveZoo)

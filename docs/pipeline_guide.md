@@ -13,13 +13,29 @@ All stages are driven by environment variables (all have defaults next to the re
 | `VAD_DEPLOY_ROOT` | this repo root (scripts auto-set it) | repo root |
 | `VAD_BACKBONE_ENGINE` / `VAD_HEAD_ENGINE` | eval engine overrides | output engines |
 
-Only `TRT_ROOT` and `CUDA_HOME` are hard requirements (the one-shot script refuses to start without them); everything else has an automatic default: `VAD_DEPLOY_ROOT` from the script location, `VAD_PROJECT_ROOT` auto-discovered (parent-of-parent, sibling, `$HOME`), `CONDA_BASE` with a `$HOME/miniconda3` fallback, `CONDA_ENV` default `b2d_zoo`, and eval engine paths default into `x86/trt_compile/output/`. The conda env itself is the upstream zoo training environment — build it per [INSTALL.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/INSTALL.md) (see docs/environment.md §5 for the sanity-gate recipe).
+Only `TRT_ROOT` and `CUDA_HOME` are hard requirements (the one-shot script refuses to start without them); everything else has an automatic default: `VAD_DEPLOY_ROOT` from the script location, `VAD_PROJECT_ROOT` auto-discovered (parent-of-parent, sibling, `$HOME`), `CONDA_BASE` with a `$HOME/miniconda3` fallback, `CONDA_ENV` default `b2d_zoo`, and eval engine paths default into `x86/trt_compile/output/`. The conda env itself is the upstream zoo training environment — build it per [INSTALL.md](https://github.com/Thinklab-SJTU/Bench2DriveZoo/blob/uniad/vad/docs/INSTALL.md) (see [docs/environment.md](environment.md) §5 for the sanity-gate recipe).
+
+## Architecture and dataflow
+
+The deployed model is split into two TensorRT engines at the model-config boundary between the backbone stack (`img_backbone`+`img_neck`) and the `pts_bbox_head`:
+
+```
+6-camera images [6,3,736,1280] --> backbone engine (ResNet50+FPN) --> mlvl_feats (4 FPN levels)
+                                                                        | 
+prev_bev [40000,1,256] (frame t-1) --------------------------------> head engine (BEV encoder + det/map/motion/ego decoders)
+img_metas (can_bus, shift) ---------------------------------------->      | 
+                                                                     9 output tensors (detection, map, motion, ego plan)
+```
+
+- **Engine boundary**: the backbone/head split follows the model config's top-level modules, so ONNX export patches do graph rewrites, not model surgery. Each engine is built independently (mixed precision across engines is a supported configuration — the INT8 backbone + FP16 head ladder step).
+- **Temporal dataflow**: `prev_bev` (the BEV feature of frame t-1) is an explicit head-engine input, so frame t depends on frame t-1, and the eval harness runs the two passes sequentially per pair. `prev_bev` is exported **static** `[40000, 1, 256]` by design: the INT8 builders set no optimization profile, so a dynamic prev_bev fails the build (see the troubleshooting section). The temporal queue mechanism (queue length 4 for Base) runs inside the head engine's graph.
+- **Plugins**: MSDeformAttn, rotate, and select-and-pad run as TRT custom plugins; they are compiled per-architecture (x86 `sm_89`, Orin `sm_87`) by [x86/plugins_build/build_x86.sh](../x86/plugins_build/build_x86.sh) / [arm64/plugins_build/build_orin.sh](../arm64/plugins_build/build_orin.sh).
 
 ## 1. Inputs (checkpoint + dataset)
 
-1. Place the checkpoint: `ckpts/vad_b2d_base.pth` (links: ckpts/README.md).
-2. Place the Bench2Drive mini-set: `data/bench2drive/{maps,v1}/` (guide: data/README.md). The mini-set's 173-frame eval split is `data/splits/bench2drive_base_train_val_split.json`.
-3. (INT8 only) Calibration npz files: regenerable via `tools/run_gen_calib.sh` (~11 GB backbone + ~26 GB head npz). This repo ships only the small `.calib` caches; `data/calib_data/*.npz` may be symlinks to elsewhere.
+1. Place the checkpoint: `ckpts/vad_b2d_base.pth` (links: [ckpts/README.md](../ckpts/README.md)).
+2. Place the Bench2Drive mini-set: `data/bench2drive/{maps,v1}/` (guide: [data/README.md](../data/README.md)). The mini-set's 173-frame eval split is [data/splits/bench2drive_base_train_val_split.json](../data/splits/bench2drive_base_train_val_split.json).
+3. (INT8 only) Calibration npz files: regenerable via [tools/run_gen_calib.sh](../tools/run_gen_calib.sh) (~11 GB backbone + ~26 GB head npz). This repo ships only the small `.calib` caches; `data/calib_data/*.npz` may be symlinks to elsewhere.
 
 ## 2. Stage 1 — TRT plugins
 
@@ -61,7 +77,7 @@ python -c "import onnx; m=onnx.load('onnx_export/output/vad_head_withprev.onnx')
 
 ## 4. Stage 3 — TRT engine builds
 
-From `x86/trt_compile/scripts/` (env as above + `TRT_ROOT` in `LD_LIBRARY_PATH`):
+From [x86/trt_compile/scripts/](../x86/trt_compile/scripts) (env as above + `TRT_ROOT` in `LD_LIBRARY_PATH`):
 
 ```bash
 BUILD_MODE=mixed python build_head_v2.py          # -> head_withprev_fp16_fixed_v2.engine (~80 MB)
@@ -103,6 +119,13 @@ python eval_pytorch_vs_trt.py
 
 **Engine-rebuild variance (measured):** with the *reference* engines the eval reproduces its numbers exactly (engines are deterministic for fixed inputs; FP16 pair: 0.7267). Rebuilding shifts results: the rebuilt FP16 head on the reference backbone measured 0.7411 (+0.014), and the rebuilt INT8 pair with the recalibrated head cache measured 0.7630 (-0.018 vs the reference-build INT8 0.7805 -- *better*, the new cache helped). TRT re-selects tactics per build and the prev_bev temporal feedback loop compounds small output deltas. Note this pipeline's stage 3 builds the backbone only as INT8; the FP16 eval uses the reference backbone engine. One caveat: `run_pipeline.sh` stage 4 defaults to the **INT8** engines -- always confirm which engines a result belongs to (the eval header always prints "FP16 Backbone + FP16 Head" regardless of the actual engines; the printed `Backbone:`/`Head:` paths are authoritative). Treat +/-0.02 around each configuration's measured value as the realistic cross-rebuild band.
 
+### Measurement metadata (x86 results in this section)
+
+- **Hardware**: NVIDIA RTX 4090 Laptop GPU 16 GB (`sm_89`), driver 580.95.05, CUDA 11.8 toolkit.
+- **Software**: torch 2.4.1+cu118 (PyTorch reference row); TensorRT 10.4.0.26 tarball engines run by the pip `tensorrt` 10.16.1.11 lean/dispatch wheel.
+- **Measurement**: per-frame model-inference time only (`time.perf_counter` around the model forward; data loading excluded); statistic = **mean over the 173-frame eval**, first frame included, no warm-up exclusion. Accuracy metric = planning L2(1 s) over the 133 valid frames.
+- **Quality**: engines are deterministic for fixed inputs (reference-engine reruns reproduce exactly); cross-rebuild variance +/-0.02 (see the variance note above); calibration caches committed, so rebuilds start from the same calibration state.
+
 ## 6. Troubleshooting (real failure modes hit while reproducing)
 
 | Symptom | Cause | Fix |
@@ -112,7 +135,7 @@ python eval_pytorch_vs_trt.py
 | engine build: "no optimization profile has been defined" | head ONNX exported with dynamic `prev_bev` | keep prev_bev static in `export_head_script.py` (this repo's copy does) |
 | `ModuleNotFoundError: mmcv._ext` from system python | conda activation skipped (CONDA_BASE wrong) | scripts use `${CONDA_ENV:-b2d_zoo}` + `CONDA_BASE` auto-fallback; verify `conda activate b2d_zoo` imports zoo code |
 | zoo import fails at `iou3d_boxes_iou_bev_forward` assert | wrong conda env (p1bevrc ABI mismatch) | use `b2d_zoo` — the only env whose mmcv `_ext` matches the zoo repo |
-| engine deserialize fails | TRT runtime ≠ builder TRT family | see docs/environment.md §2; `scripts/detect_trt_versions.sh` |
+| engine deserialize fails | TRT runtime ≠ builder TRT family | see [docs/environment.md](environment.md) §2; [scripts/detect_trt_versions.sh](../scripts/detect_trt_versions.sh) |
 
 ## 7. Orin quick section
 
@@ -133,11 +156,11 @@ python arm64/eval/eval_orin_lite.py \
   --calib-npz data/calib_data/head_calib.npz --num-frames 10
 ```
 
-Verified on the bench unit (Jetson Orin 64 GB, MAXN): the FP16 build (backbone 54.1 MB + head 79.0 MB) completes cleanly (zero errors in the build log) and the 10-frame head-only smoke passes at 286.1 ms avg (3.49 FPS) — result file `arm64/eval/results/orin_fp16_smoke_maxn_2026-10-16.json` (the smoke harness measures the head engine only) — per-mode (50/30/15 W) benchmark tables: docs/power_modes.md §4. 30 W/15 W cannot be entered live on this unit (reboot required) — see docs/power_modes.md §4.1.
+Verified on the bench unit (Jetson Orin 64 GB, MAXN): the FP16 build (backbone 54.1 MB + head 79.0 MB) completes cleanly (zero errors in the build log) and the 10-frame head-only smoke passes at 286.1 ms avg (3.49 FPS) — result file [arm64/eval/results/orin_fp16_smoke_maxn_2026-10-16.json](../arm64/eval/results/orin_fp16_smoke_maxn_2026-10-16.json) (the smoke harness measures the head engine only) — per-mode (50/30/15 W) benchmark tables: [docs/power_modes.md](power_modes.md) §4. 30 W/15 W cannot be entered live on this unit (reboot required) — see [docs/power_modes.md](power_modes.md) §4.1.
 
 The INT8 build (`run_build_int8_orin.sh`, step 0 links the calib npz) is the **VAD-Base INT8 (PTQ) deployment pair**: real-data calibration (EntropyCalibration2, 64 real frames), MatMul chain pinned FP16, sensitive layers FP32 — the same recipe as the x86 INT8 gate (§5). Calibration is cache-first: both builders reuse the committed `data/calib_data/{backbone,head}_int8_orin.calib` when present (the exact calibration state of the reference engines); if absent, they recalibrate on-device from `data/calib_data/head_calib.npz` — the fallback is not theoretical: the reference head engine's cache was produced exactly that way on this unit (the x86-cache copy arrived under the wrong filename, so the builder fell back; the on-device cache has the same size and the engine passed the fidelity gate below).
 
-Reference engines measure 28.0 MB (backbone) + 79.2 MB (head). Verified accuracy on this unit — 10-frame head-only fidelity vs the x86 FP16 reference (GT collected once on the x86 host via `arm64/eval/collect_gt_x86.py`; the 398 MB GT npz is gitignored, regenerate it there):
+Reference engines measure 28.0 MB (backbone) + 79.2 MB (head). Verified accuracy on this unit — 10-frame head-only fidelity vs the x86 FP16 reference (GT collected once on the x86 host via [arm64/eval/collect_gt_x86.py](../arm64/eval/collect_gt_x86.py); the 398 MB GT npz is gitignored, regenerate it there):
 
 ```bash
 # on the x86 host (conda env): collect the FP16 GT once
@@ -154,10 +177,10 @@ python arm64/eval/eval_orin_lite.py \
 ```
 
 Two Orin-specific gotchas hit during bring-up (both now handled in scripts):
-- the pip `tensorrt` wheel (10.4.0) must load the tarball's `libnvinfer` (10.4.0.26) via `LD_LIBRARY_PATH`, or engine deserialization fails — `run_eval_*_orin.sh` auto-detect `ORIN_TRT_ROOT` now; details in docs/environment.md §3.1;
-- `nvpmodel -m 1/-m 2` answers "Reboot required" on this unit — verify with `nvpmodel -q` after switching (docs/power_modes.md §4.1).
+- the pip `tensorrt` wheel (10.4.0) must load the tarball's `libnvinfer` (10.4.0.26) via `LD_LIBRARY_PATH`, or engine deserialization fails — `run_eval_*_orin.sh` auto-detect `ORIN_TRT_ROOT` now; details in [docs/environment.md](environment.md) §3.1;
+- `nvpmodel -m 1/-m 2` answers "Reboot required" on this unit — verify with `nvpmodel -q` after switching ([docs/power_modes.md](power_modes.md) §4.1).
 
-Details: docs/power_modes.md §4 (methodology + per-config measured tables for all 4 modes), docs/environment.md §3 (device + connectivity), arm64/trt_compile/{fp16,int8}/ (builders).
+Details: [docs/power_modes.md](power_modes.md) §4 (methodology + per-config measured tables for all 4 modes), [docs/environment.md](environment.md) §3 (device + connectivity), arm64/trt_compile/{fp16,int8}/ (builders).
 
 ## 8. Autoware note [Pending]
 
